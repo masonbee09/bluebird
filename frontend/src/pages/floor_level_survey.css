@@ -1,0 +1,208 @@
+.fls-page {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    background-color: var(--color-bg);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.fls-toolstrip {
+    flex: 0 0 auto;
+    width: 52px;
+    padding: 10px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background-color: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    box-shadow: var(--shadow-xs);
+    z-index: 2;
+}
+
+.fls-toolstrip-btn {
+    appearance: none;
+    position: relative;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background-color: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.fls-toolstrip-btn:hover {
+    background-color: var(--color-surface-muted);
+    color: var(--color-text);
+    border-color: var(--color-border);
+}
+
+.fls-toolstrip-btn.is-active {
+    background-color: var(--color-primary-soft);
+    color: var(--color-primary-active);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.fls-toolstrip-btn:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+}
+
+.fls-toolstrip-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.fls-toolstrip-shortcut {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--color-text-subtle);
+    pointer-events: none;
+    line-height: 1;
+}
+
+.fls-toolstrip-btn.is-active .fls-toolstrip-shortcut {
+    color: var(--color-primary-active);
+}
+
+.fls-toolstrip-divider {
+    width: 28px;
+    height: 1px;
+    background-color: var(--color-border);
+    margin: 6px 0;
+}
+
+.fls-toolstrip-solve {
+    color: #ffffff;
+    background-color: var(--color-success);
+    border-color: var(--color-success);
+}
+
+.fls-toolstrip-solve:hover {
+    background-color: var(--color-success-hover);
+    border-color: var(--color-success-hover);
+    color: #ffffff;
+}
+
+.fls-toolstrip-spacer {
+    flex: 1;
+    min-height: 6px;
+}
+
+.fls-toolstrip-help-glyph {
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1;
+    letter-spacing: 0;
+}
+
+.fls-workspace {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.fls-canvas-host {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    padding: 16px 16px 12px;
+    background-color: var(--color-bg);
+}
+
+.fls-bottom-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    padding: 10px 16px;
+    background-color: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -1px 2px rgba(15, 23, 42, 0.04);
+    color: var(--color-text);
+}
+
+.fls-bottom-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.fls-bottom-group-title {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--color-text-subtle);
+}
+
+.fls-bottom-group-content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.fls-bottom-field {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.fls-bottom-field .integer-input-wrapper,
+.fls-bottom-field .text-input-wrapper {
+    padding: 0;
+    gap: 6px;
+}
+
+.fls-bottom-field .integer-input-box,
+.fls-bottom-field .text-input-box {
+    width: 96px;
+    flex: 0 0 auto;
+}
+
+.fls-bottom-divider {
+    width: 1px;
+    background-color: var(--color-border);
+    align-self: stretch;
+}
+
+.fls-bottom-spacer {
+    flex: 1;
+}
+
+.fls-bottom-hint {
+    align-self: center;
+    color: var(--color-text-subtle);
+    font-size: 11.5px;
+    line-height: 1.5;
+    max-width: 360px;
+    text-align: right;
+}
+
+.fls-bottom-hint kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background-color: var(--color-surface-muted);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-strong);
+    border-bottom-width: 2px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    margin: 0 1px;
+}

@@ -1,0 +1,61 @@
+.fls-context-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 168px;
+    padding: 4px;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    font-size: 13px;
+    color: var(--color-text);
+    user-select: none;
+}
+
+.fls-context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    background-color: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.fls-context-menu-item:hover:not(:disabled) {
+    background-color: var(--color-primary-soft);
+    color: var(--color-primary-active);
+}
+
+.fls-context-menu-item.is-destructive {
+    color: var(--color-danger);
+}
+
+.fls-context-menu-item.is-destructive:hover:not(:disabled) {
+    background-color: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
+.fls-context-menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.fls-context-menu-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: currentColor;
+}
+
+.fls-context-menu-label {
+    flex: 1;
+}

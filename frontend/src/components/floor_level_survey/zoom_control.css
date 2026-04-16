@@ -1,0 +1,124 @@
+.fls-zoom-control {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(6px);
+    user-select: none;
+}
+
+.fls-zoom-btn {
+    appearance: none;
+    background: transparent;
+    border: none;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    padding: 0;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.fls-zoom-btn:hover {
+    background-color: var(--color-surface-muted);
+    color: var(--color-text);
+}
+
+.fls-zoom-btn:active {
+    background-color: var(--color-primary-soft);
+    color: var(--color-primary-active);
+}
+
+.fls-zoom-btn:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+}
+
+.fls-zoom-slider {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    width: 140px;
+    height: 20px;
+    margin: 0 4px;
+    padding: 0;
+    cursor: pointer;
+}
+
+.fls-zoom-slider:focus {
+    outline: none;
+}
+
+.fls-zoom-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    background-color: var(--color-border-strong);
+    border-radius: var(--radius-pill);
+}
+
+.fls-zoom-slider::-moz-range-track {
+    height: 4px;
+    background-color: var(--color-border-strong);
+    border-radius: var(--radius-pill);
+    border: none;
+}
+
+.fls-zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    background-color: var(--color-primary);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: var(--shadow-xs);
+    cursor: pointer;
+    transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+.fls-zoom-slider::-webkit-slider-thumb:hover {
+    background-color: var(--color-primary-hover);
+    transform: scale(1.08);
+}
+
+.fls-zoom-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background-color: var(--color-primary);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: var(--shadow-xs);
+    cursor: pointer;
+}
+
+.fls-zoom-slider:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+.fls-zoom-readout {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--color-text);
+    min-width: 38px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.fls-zoom-divider {
+    width: 1px;
+    height: 18px;
+    background-color: var(--color-border);
+    margin: 0 2px;
+}

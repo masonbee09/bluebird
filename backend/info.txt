@@ -1,0 +1,3 @@
+To start the server, use this command: uvicorn main:app --reload
+
+To set the python path, use: export PYTHONPATH=$PYTHONPATH:/Users/joshpeterson/Github/blue-bird/backend/

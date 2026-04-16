@@ -1,0 +1,12 @@
+.flex-container {
+  display: flex;
+  padding: 0px;
+}
+.flex-child {
+  flex: 1; /* Allows the divs to grow and shrink */
+  margin: 10px; /* Adds space between the divs */
+}
+
+.splitter {
+  height: 40px;
+}

@@ -1,0 +1,40 @@
+Usage:
+
+
+1. Call an new ContourMap from contourmap.py using CreateContourMap, inserting the xs, ys, and zs as lists of floats.
+2. Using that new instance of the class, call .lines_at_height(height).
+
+
+
+
+Test Json
+
+{
+  "bounds": [
+    -2,
+    3,
+    -3,
+    2
+  ],
+  "points": [
+    {
+      "x": 0,
+      "y": 0,
+      "z": 0.5
+    }, {
+      "x": 1.2,
+      "y": 0.8,
+      "z": 1.2
+    }, {
+      "x": -1.6,
+      "y": -1.0,
+      "z": 0.3
+    }
+  ],
+  "heights": [
+    0.6,
+    0.9,
+    1.1
+  ],
+  "resolution": 50
+}
