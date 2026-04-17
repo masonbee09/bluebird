@@ -8,3 +8,4 @@ pydantic_pint
 matplotlib
 contourpy
 scipy
+shapely

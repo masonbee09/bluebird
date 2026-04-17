@@ -30,6 +30,8 @@ function FloorLevelSurveyPage() {
     const [showMajorGrid, setShowMajorGrid] = useState<boolean>(true);
     const [showMinimap, setShowMinimap] = useState<boolean>(true);
     const [showContours, setShowContours] = useState<boolean>(true);
+    const [contourStartColor, setContourStartColor] = useState<string>("#2563eb");
+    const [contourEndColor, setContourEndColor] = useState<string>("#dc2626");
     const [guideOpen, setGuideOpen] = useState<boolean>(() => {
         try { return localStorage.getItem("fls.shortcutGuide.open") === "1"; } catch { return false; }
     });
@@ -99,6 +101,8 @@ function FloorLevelSurveyPage() {
                         setShowMinimap={setShowMinimap}
                         showContours={showContours}
                         setShowContours={setShowContours}
+                        contourStartColor={contourStartColor}
+                        contourEndColor={contourEndColor}
                         guideOpen={guideOpen}
                         setGuideOpen={setGuideOpen}
                         onActiveHeightChange={setPointHeight}
@@ -118,10 +122,45 @@ function FloorLevelSurveyPage() {
                         </div>
                     </div>
 
+                    <div className="fls-bottom-divider" />
+
+                    <div className="fls-bottom-group">
+                        <div className="fls-bottom-group-title">Contour colors</div>
+                        <div className="fls-bottom-group-content">
+                            <label className="fls-color-field" title="Color assigned to the lowest contour height">
+                                <span className="fls-color-label">Low</span>
+                                <input
+                                    type="color"
+                                    value={contourStartColor}
+                                    onChange={e => setContourStartColor(e.target.value)}
+                                    aria-label="Start color (low)"
+                                />
+                            </label>
+                            <div
+                                className="fls-color-gradient"
+                                aria-hidden="true"
+                                style={{
+                                    background: `linear-gradient(to right, ${contourStartColor}, ${contourEndColor})`,
+                                }}
+                            />
+                            <label className="fls-color-field" title="Color assigned to the highest contour height">
+                                <span className="fls-color-label">High</span>
+                                <input
+                                    type="color"
+                                    value={contourEndColor}
+                                    onChange={e => setContourEndColor(e.target.value)}
+                                    aria-label="End color (high)"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
                     <div className="fls-bottom-spacer" />
 
                     <div className="fls-bottom-hint">
-                        
+                        Right-click a wall for options. Scroll or arrow keys
+                        adjust the selected point's height by <kbd>0.1</kbd>.
+                        Press <kbd>?</kbd> for shortcuts.
                     </div>
                 </footer>
             </div>

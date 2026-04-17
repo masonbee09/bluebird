@@ -49,3 +49,20 @@ export interface ContourPolyline {
     points: number[];
 }
 
+/**
+ * A filled "band" of the contour map: the region where the interpolated
+ * surface sits between `low` and `high`. Each band is returned as a list
+ * of polygon fragments (one per TIN triangle piece, already clipped to
+ * the wall polygon server-side). `colorHeight` is the representative z
+ * value the frontend hands to the gradient ramp.
+ *
+ * `low` is null for the "below everything" band; `high` is null for the
+ * "above everything" band.
+ */
+export interface ContourFillBand {
+    low: number | null;
+    high: number | null;
+    colorHeight: number;
+    fragments: number[][];  // each fragment is a flat [x0, y0, x1, y1, ...]
+}
+

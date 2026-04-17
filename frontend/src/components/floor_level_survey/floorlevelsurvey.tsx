@@ -27,6 +27,8 @@ interface FLSProps {
     setShowMinimap: (v: boolean) => void;
     showContours: boolean;
     setShowContours: (v: boolean) => void;
+    contourStartColor: string;
+    contourEndColor: string;
     guideOpen: boolean;
     setGuideOpen: (v: boolean) => void;
     onActiveHeightChange?: (z: number | null) => void;
@@ -36,6 +38,12 @@ interface ContourApiResponse {
     status: string;
     heights?: number[];
     lines?: { x: number; y: number }[][][];
+    bands?: {
+        low: number | null;
+        high: number | null;
+        colorHeight: number;
+        fragments: { x: number; y: number }[][];
+    }[];
     Message?: string;
 }
 
@@ -44,7 +52,33 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, showContours, setShowContours, guideOpen, setGuideOpen, onActiveHeightChange }: FLSProps) {
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+    let h6 = hex.trim().replace(/^#/, "");
+    if (h6.length === 3) {
+        h6 = h6.split("").map(c => c + c).join("");
+    }
+    if (h6.length !== 6) return { h: 0, s: 0, l: 0.5 };
+    const r = parseInt(h6.slice(0, 2), 16) / 255;
+    const g = parseInt(h6.slice(2, 4), 16) / 255;
+    const b = parseInt(h6.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let h = 0;
+    let s = 0;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+        else if (max === g) h = (b - r) / d + 2;
+        else h = (r - g) / d + 4;
+        h *= 60;
+    }
+    return { h, s, l };
+}
+
+
+function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, showContours, setShowContours, contourStartColor, contourEndColor, guideOpen, setGuideOpen, onActiveHeightChange }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -108,7 +142,30 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                         polylines.push({ height: h, points: pts });
                     }
                 }
-                controller.setContours(polylines);
+
+                const bands = [];
+                if (data.bands) {
+                    for (const b of data.bands) {
+                        const fragments: number[][] = [];
+                        for (const ring of b.fragments) {
+                            if (!ring || ring.length < 3) continue;
+                            const flat: number[] = new Array(ring.length * 2);
+                            for (let k = 0; k < ring.length; k++) {
+                                flat[2 * k] = ring[k].x;
+                                flat[2 * k + 1] = ring[k].y;
+                            }
+                            fragments.push(flat);
+                        }
+                        bands.push({
+                            low: b.low,
+                            high: b.high,
+                            colorHeight: b.colorHeight,
+                            fragments,
+                        });
+                    }
+                }
+
+                controller.setContours(polylines, bands);
             } catch (err) {
                 if (!cancelled) console.error("Contour request failed:", err);
             }
@@ -762,14 +819,23 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
 
     const selectedZ = controller.getFirstSelectedHeight();
 
-    // Contour colour ramp (cool → warm by height).
+    // Contour colour ramp (cool → warm by height). We span both the
+    // polyline heights and the band midpoints so the ramp endpoints stay
+    // at the extremes of what's actually drawn (the open-ended below/above
+    // bands carry the lowest and highest `colorHeight` values).
     const contourHeightBounds = (() => {
-        if (controller.contours.length === 0) return { min: 0, max: 1 };
+        const hasLines = controller.contours.length > 0;
+        const hasBands = controller.contourBands.length > 0;
+        if (!hasLines && !hasBands) return { min: 0, max: 1 };
         let min = Infinity;
         let max = -Infinity;
         for (const c of controller.contours) {
             if (c.height < min) min = c.height;
             if (c.height > max) max = c.height;
+        }
+        for (const b of controller.contourBands) {
+            if (b.colorHeight < min) min = b.colorHeight;
+            if (b.colorHeight > max) max = b.colorHeight;
         }
         if (!isFinite(min) || !isFinite(max) || min === max) {
             return { min: min, max: min + 1 };
@@ -777,11 +843,33 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
         return { min, max };
     })();
 
-    const colorForHeight = (h: number): string => {
+    const startHsl = hexToHsl(contourStartColor);
+    const endHsl = hexToHsl(contourEndColor);
+
+    const hslComponentsForHeight = (h: number): { h: number; s: number; l: number } => {
         const { min, max } = contourHeightBounds;
         const t = Math.max(0, Math.min(1, (h - min) / (max - min)));
-        const hue = 220 - 220 * t;
-        return `hsl(${hue.toFixed(0)}, 55%, 45%)`;
+        // Direct (non-wrapped) HSL interpolation: when the hues are far apart
+        // (e.g. blue → red) this naturally traverses cyan / green / yellow,
+        // which produces the rainbow ramp seen in the reference image.
+        return {
+            h: startHsl.h + (endHsl.h - startHsl.h) * t,
+            s: startHsl.s + (endHsl.s - startHsl.s) * t,
+            l: startHsl.l + (endHsl.l - startHsl.l) * t,
+        };
+    };
+
+    const colorForHeight = (h: number): string => {
+        const c = hslComponentsForHeight(h);
+        return `hsl(${c.h.toFixed(1)}, ${(c.s * 100).toFixed(1)}%, ${(c.l * 100).toFixed(1)}%)`;
+    };
+
+    // Slightly lighter and very translucent for fills so the contour lines
+    // drawn on top still read clearly against them.
+    const fillColorForHeight = (h: number): string => {
+        const c = hslComponentsForHeight(h);
+        const lightened = Math.min(1, c.l + 0.12);
+        return `hsla(${c.h.toFixed(1)}, ${(c.s * 100).toFixed(1)}%, ${(lightened * 100).toFixed(1)}%, 0.55)`;
     };
 
     useEffect(() => {
@@ -864,6 +952,25 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                     showMajor={showMajorGrid}
                 />
 
+                {showContours && controller.contourBands.length > 0 && (
+                    <Layer listening={false}>
+                        {controller.contourBands.flatMap((band, bIdx) =>
+                            band.fragments.map((pts, fIdx) => (
+                                <Line
+                                    key={`band-${bIdx}-${fIdx}`}
+                                    points={pts}
+                                    closed
+                                    fill={fillColorForHeight(band.colorHeight)}
+                                    stroke={fillColorForHeight(band.colorHeight)}
+                                    strokeWidth={0.5}
+                                    strokeScaleEnabled={false}
+                                    perfectDrawEnabled={false}
+                                />
+                            ))
+                        )}
+                    </Layer>
+                )}
+
                 {showContours && controller.contours.length > 0 && (
                     <Layer listening={false}>
                         {controller.contours.map((cl, idx) => (
@@ -871,11 +978,11 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                                 key={`contour-${idx}`}
                                 points={cl.points}
                                 stroke={colorForHeight(cl.height)}
-                                strokeWidth={1.25}
+                                strokeWidth={1.6}
                                 strokeScaleEnabled={false}
                                 lineCap="round"
                                 lineJoin="round"
-                                opacity={0.85}
+                                opacity={0.95}
                             />
                         ))}
                     </Layer>

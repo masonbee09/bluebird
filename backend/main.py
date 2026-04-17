@@ -53,20 +53,37 @@ def beam_calc(beam: BeamJSON):
 @app.post("/fls_get_contours")
 def fls_get_contours(fls_input: ContourInput):
     output = fls_input.get_output()
-    # logging.info(output)
+
     lines = []
-    # for l1 in output.lines:
-    #     lines.append([])
-    #     for l2 in l1:
-    #         l1.append([])
-    #         for p in l2:
-    #             l2.append({"x": p[0], "y": p[1]})
     for i in range(len(output.lines)):
         lines.append([])
         for j in range(len(output.lines[i])):
             lines[i].append([])
             for k in range(len(output.lines[i][j])):
-                lines[i][j].append({"x": output.lines[i][j][k][0], "y": output.lines[i][j][k][1]})
-    return {"status": "Okay",
-            "heights": output.input.heights,
-            "lines": lines}
+                lines[i][j].append({
+                    "x": output.lines[i][j][k][0],
+                    "y": output.lines[i][j][k][1],
+                })
+
+    # Fill bands: one entry per inter-height slab. Each has a `colorHeight`
+    # the frontend uses to pick the band's colour from the gradient ramp,
+    # plus a list of fragments (outer polygon rings, already clipped to the
+    # wall polygon).
+    bands = []
+    for b in output.bands:
+        frags = []
+        for ring in b.fragments:
+            frags.append([{"x": p[0], "y": p[1]} for p in ring])
+        bands.append({
+            "low": b.low,
+            "high": b.high,
+            "colorHeight": b.color_height,
+            "fragments": frags,
+        })
+
+    return {
+        "status": "Okay",
+        "heights": output.input.heights,
+        "lines": lines,
+        "bands": bands,
+    }

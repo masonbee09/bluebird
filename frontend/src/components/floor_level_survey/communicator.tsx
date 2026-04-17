@@ -99,15 +99,29 @@ class Communicator {
         return heights;
     }
 
+    getWalls(): number[][] {
+        const walls: number[][] = [];
+        for (const shape of this.parent.shapes) {
+            if (shape.type !== "wall") continue;
+            if (shape.temporary) continue;
+            const p = shape.points;
+            if (!p || p.length < 4) continue;
+            walls.push([p[0], p[1], p[2], p[3]]);
+        }
+        return walls;
+    }
+
     createJsonData() {
         let bounds = this.getBounds();
         let points = this.getPoints();
         let heights = this.getHeights();
+        let walls = this.getWalls();
         return {
             bounds: bounds,
             points: points,
             heights: heights,
-            resolution: 50
+            resolution: 50,
+            walls: walls,
         };
     }
 

@@ -17,6 +17,7 @@ an interpolated raster).
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from typing import Iterable, List, Sequence, Tuple
 
@@ -27,9 +28,138 @@ from scipy.spatial import Delaunay
 Point = Tuple[float, float]
 Segment = Tuple[Point, Point]
 Polyline = List[Point]
+Vertex3 = Tuple[float, float, float]
+Triangle3 = Tuple[Vertex3, Vertex3, Vertex3]
 
 
 _EPS = 1e-9
+
+
+# --- Wall densification & IDW z-interpolation ----------------------------
+#
+# The Delaunay triangulation of a scatter of survey points only covers the
+# convex hull of those points, so for concave rooms contour polylines stop
+# short of the walls on one side and bulge outside the walls in the notch.
+# By sampling points along every wall segment and assigning them a z value
+# interpolated from existing measurements (inverse distance weighting), we
+# turn the TIN into something that extends exactly to every wall edge;
+# shapely clipping then shaves off any convex-hull bleeding that remains.
+
+def densify_walls(walls: Sequence[Sequence[float]], spacing: float = 15.0) -> List[Point]:
+    """Return points sampled along every wall segment at approximately `spacing`."""
+    seen: set = set()
+    out: List[Point] = []
+    for w in walls:
+        if len(w) < 4:
+            continue
+        x1, y1, x2, y2 = float(w[0]), float(w[1]), float(w[2]), float(w[3])
+        length = math.hypot(x2 - x1, y2 - y1)
+        if length < _EPS:
+            continue
+        n = max(1, int(math.ceil(length / max(spacing, _EPS))))
+        for i in range(n + 1):
+            t = i / n
+            x = x1 + t * (x2 - x1)
+            y = y1 + t * (y2 - y1)
+            key = (round(x, 6), round(y, 6))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((x, y))
+    return out
+
+
+def idw_interpolate(
+    x: float,
+    y: float,
+    xs: Sequence[float],
+    ys: Sequence[float],
+    zs: Sequence[float],
+    power: float = 2.0,
+) -> float:
+    """Inverse distance weighted interpolation at (x, y). Falls back to 0 if no samples."""
+    if not xs:
+        return 0.0
+    weighted = 0.0
+    weight_sum = 0.0
+    half_power = power * 0.5
+    for xi, yi, zi in zip(xs, ys, zs):
+        dx = xi - x
+        dy = yi - y
+        d2 = dx * dx + dy * dy
+        if d2 < 1e-12:
+            return float(zi)
+        w = 1.0 / (d2 ** half_power)
+        weighted += w * zi
+        weight_sum += w
+    if weight_sum <= 0.0:
+        return 0.0
+    return weighted / weight_sum
+
+
+def extend_with_wall_samples(
+    xs: Sequence[float],
+    ys: Sequence[float],
+    zs: Sequence[float],
+    walls: Sequence[Sequence[float]],
+    spacing: float = 15.0,
+) -> Tuple[List[float], List[float], List[float]]:
+    """Append IDW-interpolated samples along walls so the TIN reaches them."""
+    if not walls:
+        return list(xs), list(ys), list(zs)
+
+    existing = set((round(float(x), 6), round(float(y), 6)) for x, y in zip(xs, ys))
+    new_xs = list(xs)
+    new_ys = list(ys)
+    new_zs = list(zs)
+    for sx, sy in densify_walls(walls, spacing=spacing):
+        key = (round(sx, 6), round(sy, 6))
+        if key in existing:
+            continue
+        z = idw_interpolate(sx, sy, xs, ys, zs)
+        new_xs.append(sx)
+        new_ys.append(sy)
+        new_zs.append(z)
+        existing.add(key)
+    return new_xs, new_ys, new_zs
+
+
+# --- Chaikin smoothing ---------------------------------------------------
+#
+# Two passes of Chaikin's corner-cutting algorithm round sharp triangle
+# edges into visibly smooth curves while staying strictly inside the convex
+# hull of the input vertices. That in-hull property is important because it
+# means a smoothed contour never crosses the straight contour on the other
+# side of a triangle, so lines and fills still tile consistently.
+
+def chaikin_smooth(
+    pts: Sequence[Point],
+    iterations: int = 2,
+    closed: bool = False,
+) -> List[Point]:
+    """Chaikin corner-cutting. Endpoints are kept fixed when `closed` is False."""
+    if len(pts) < 3 or iterations <= 0:
+        return [tuple(p) for p in pts]
+    current: List[Point] = [tuple(p) for p in pts]
+    for _ in range(iterations):
+        n = len(current)
+        new: List[Point] = []
+        if not closed:
+            new.append(current[0])
+            for i in range(n - 1):
+                p = current[i]
+                q = current[i + 1]
+                new.append((0.75 * p[0] + 0.25 * q[0], 0.75 * p[1] + 0.25 * q[1]))
+                new.append((0.25 * p[0] + 0.75 * q[0], 0.25 * p[1] + 0.75 * q[1]))
+            new.append(current[-1])
+        else:
+            for i in range(n):
+                p = current[i]
+                q = current[(i + 1) % n]
+                new.append((0.75 * p[0] + 0.25 * q[0], 0.75 * p[1] + 0.25 * q[1]))
+                new.append((0.25 * p[0] + 0.75 * q[0], 0.25 * p[1] + 0.75 * q[1]))
+        current = new
+    return current
 
 
 def _edge_crossing(
@@ -210,6 +340,148 @@ def tin_contours_at_height(
     return _stitch_segments(segments)
 
 
+# --- Filled contour bands ------------------------------------------------
+#
+# For fills we keep the TIN but now classify each triangle against two
+# z-planes (h_low and h_high) at once. The triangle intersected with the
+# slab h_low <= z <= h_high is a convex 3D polygon with 3..5 vertices; we
+# get it by Sutherland-Hodgman style clipping of the triangle against
+# each plane in turn. Projecting the result to (x, y) gives the exact
+# 2D fill polygon for that band within that triangle. Because adjacent
+# triangles share edges exactly, the union of all per-triangle polygons
+# for a band covers the TIN seamlessly.
+
+
+def _clip_polygon_above(poly: Sequence[Vertex3], h: float) -> List[Vertex3]:
+    """Keep the half of `poly` where z >= h (vertices remain 3-D)."""
+    if not poly:
+        return []
+    n = len(poly)
+    out: List[Vertex3] = []
+    for i in range(n):
+        curr = poly[i]
+        prev = poly[(i - 1) % n]
+        curr_in = curr[2] >= h - _EPS
+        prev_in = prev[2] >= h - _EPS
+        if curr_in:
+            if not prev_in:
+                dz = curr[2] - prev[2]
+                if abs(dz) > _EPS:
+                    t = (h - prev[2]) / dz
+                    out.append((
+                        prev[0] + t * (curr[0] - prev[0]),
+                        prev[1] + t * (curr[1] - prev[1]),
+                        h,
+                    ))
+            out.append(curr)
+        elif prev_in:
+            dz = curr[2] - prev[2]
+            if abs(dz) > _EPS:
+                t = (h - prev[2]) / dz
+                out.append((
+                    prev[0] + t * (curr[0] - prev[0]),
+                    prev[1] + t * (curr[1] - prev[1]),
+                    h,
+                ))
+    return out
+
+
+def _clip_polygon_below(poly: Sequence[Vertex3], h: float) -> List[Vertex3]:
+    """Keep the half of `poly` where z <= h."""
+    if not poly:
+        return []
+    n = len(poly)
+    out: List[Vertex3] = []
+    for i in range(n):
+        curr = poly[i]
+        prev = poly[(i - 1) % n]
+        curr_in = curr[2] <= h + _EPS
+        prev_in = prev[2] <= h + _EPS
+        if curr_in:
+            if not prev_in:
+                dz = curr[2] - prev[2]
+                if abs(dz) > _EPS:
+                    t = (h - prev[2]) / dz
+                    out.append((
+                        prev[0] + t * (curr[0] - prev[0]),
+                        prev[1] + t * (curr[1] - prev[1]),
+                        h,
+                    ))
+            out.append(curr)
+        elif prev_in:
+            dz = curr[2] - prev[2]
+            if abs(dz) > _EPS:
+                t = (h - prev[2]) / dz
+                out.append((
+                    prev[0] + t * (curr[0] - prev[0]),
+                    prev[1] + t * (curr[1] - prev[1]),
+                    h,
+                ))
+    return out
+
+
+def _build_triangles(xs: Sequence[float], ys: Sequence[float], zs: Sequence[float]) -> List[Triangle3]:
+    if len(xs) < 3:
+        return []
+    pts_xy = np.column_stack([np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)])
+    zs_arr = np.asarray(zs, dtype=float)
+    try:
+        tri = Delaunay(pts_xy)
+    except Exception:
+        return []
+    triangles: List[Triangle3] = []
+    for simplex in tri.simplices:
+        i0, i1, i2 = int(simplex[0]), int(simplex[1]), int(simplex[2])
+        triangles.append((
+            (float(pts_xy[i0, 0]), float(pts_xy[i0, 1]), float(zs_arr[i0])),
+            (float(pts_xy[i1, 0]), float(pts_xy[i1, 1]), float(zs_arr[i1])),
+            (float(pts_xy[i2, 0]), float(pts_xy[i2, 1]), float(zs_arr[i2])),
+        ))
+    return triangles
+
+
+def tin_fill_band_fragments(
+    xs: Sequence[float],
+    ys: Sequence[float],
+    zs: Sequence[float],
+    h_low: float,
+    h_high: float,
+    triangles: Sequence[Triangle3] | None = None,
+) -> List[Polyline]:
+    """Return the (x, y) outer rings of every triangle-band intersection.
+
+    Either supply an already-computed triangulation via `triangles`, or let
+    the function triangulate the (xs, ys) itself.
+    """
+    if triangles is None:
+        triangles = _build_triangles(xs, ys, zs)
+    if not triangles:
+        return []
+
+    use_low = math.isfinite(h_low)
+    use_high = math.isfinite(h_high)
+
+    fragments: List[Polyline] = []
+    for t0, t1, t2 in triangles:
+        zmin = min(t0[2], t1[2], t2[2])
+        zmax = max(t0[2], t1[2], t2[2])
+        if use_low and zmax <= h_low + _EPS:
+            continue
+        if use_high and zmin >= h_high - _EPS:
+            continue
+        poly: List[Vertex3] = [t0, t1, t2]
+        if use_low:
+            poly = _clip_polygon_above(poly, h_low)
+            if len(poly) < 3:
+                continue
+        if use_high:
+            poly = _clip_polygon_below(poly, h_high)
+            if len(poly) < 3:
+                continue
+        fragments.append([(p[0], p[1]) for p in poly])
+    return fragments
+
+
 def tin_contours(
     xs: Sequence[float],
     ys: Sequence[float],
@@ -251,4 +523,12 @@ def tin_contours(
     return out
 
 
-__all__ = ["tin_contours_at_height", "tin_contours"]
+__all__ = [
+    "tin_contours_at_height",
+    "tin_contours",
+    "tin_fill_band_fragments",
+    "extend_with_wall_samples",
+    "densify_walls",
+    "idw_interpolate",
+    "chaikin_smooth",
+]
