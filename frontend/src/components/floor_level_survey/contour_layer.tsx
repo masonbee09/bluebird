@@ -36,6 +36,7 @@ interface ContourLayerProps {
     fillOpacity?: number;
     lineOpacity?: number;
     lineTension?: number;
+    showFill?: boolean;
 }
 
 
@@ -72,6 +73,7 @@ function ContourLayer({
     fillOpacity = 0.45,
     lineOpacity = 0.9,
     lineTension = 0.5,
+    showFill = true,
 }: ContourLayerProps) {
     if (!data) return null;
     const heights = data.heights ?? [];
@@ -89,7 +91,7 @@ function ContourLayer({
     return (
         <Layer listening={false} opacity={1}>
             {/* Filled bands: draw first so line contours sit on top. */}
-            {(data.fills ?? []).map((band, bi) => {
+            {showFill && (data.fills ?? []).map((band, bi) => {
                 const mid = (band.lo + band.hi) / 2;
                 const color = colorAtHeight(mid);
                 return band.polygons.map((poly, pi) => {
@@ -125,7 +127,7 @@ function ContourLayer({
             {data.lines.map((linesAtH, hi) => {
                 const h = heights[hi];
                 if (h === undefined) return null;
-                const color = colorAtHeight(h);
+                const color = showFill ? colorAtHeight(h) : "#111111";
                 if (!linesAtH) return null;
                 return linesAtH.map((line, li) => {
                     if (!line || line.length < 2) return null;

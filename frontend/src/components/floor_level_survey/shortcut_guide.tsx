@@ -35,7 +35,9 @@ const groups: { title: string; items: GroupedShortcut[] }[] = [
     {
         title: "Drawing",
         items: [
-            { keys: ["Click"], label: "Place a wall corner / point (snaps to grid)" },
+            { keys: ["Click"], label: "Place a point (free position)" },
+            { keys: ["Alt", "+", "Click"], label: "Place a point snapped to the grid" },
+            { keys: ["Click"], label: "Place a wall corner (always snaps to grid)" },
             { keys: ["Double-click"], label: "Finish wall polygon" },
             { keys: ["Click"], label: "On existing point: selects it instead of adding" },
         ],
@@ -44,7 +46,8 @@ const groups: { title: string; items: GroupedShortcut[] }[] = [
         title: "Select tool",
         items: [
             { keys: ["Click"], label: "Select a point" },
-            { keys: ["Drag"], label: "On a point: move it (snaps to grid)" },
+            { keys: ["Drag"], label: "On a point: move it (free)" },
+            { keys: ["Alt", "+", "Drag"], label: "On a point: move and snap to grid" },
             { keys: ["Drag"], label: "On empty space: pan the workspace" },
         ],
     },

@@ -195,6 +195,12 @@ class ContourMap(BaseModel):
 
         polygons is a list of polygons; each polygon is a list of rings where the
         first ring is the outer boundary and subsequent rings are holes.
+
+        To guarantee the wall interior is fully coloured, we extend the band set
+        with a low cap (below the minimum requested height) and a high cap
+        (above the maximum requested height) whenever the interpolated surface
+        reaches values outside the user-provided range. Those cap bands are
+        still clipped to the wall polygon so nothing spills outside.
         """
         if len(heights) < 2:
             return []
@@ -202,10 +208,24 @@ class ContourMap(BaseModel):
         gen = contour_generator(Xi, Yi, Zi, fill_type="OuterOffset")
         clip = self._cached_clip()
 
-        out = []
+        z_min_ext = None
+        z_max_ext = None
+        if Zi.size:
+            valid = Zi[~np.isnan(Zi)]
+            if valid.size > 0:
+                z_min_ext = float(np.min(valid)) - 1.0
+                z_max_ext = float(np.max(valid)) + 1.0
+
+        band_levels: List[Tuple[float, float]] = []
+        if z_min_ext is not None and z_min_ext < heights[0]:
+            band_levels.append((z_min_ext, float(heights[0])))
         for i in range(len(heights) - 1):
-            lo = float(heights[i])
-            hi = float(heights[i + 1])
+            band_levels.append((float(heights[i]), float(heights[i + 1])))
+        if z_max_ext is not None and z_max_ext > heights[-1]:
+            band_levels.append((float(heights[-1]), z_max_ext))
+
+        out = []
+        for (lo, hi) in band_levels:
             try:
                 points_list, offsets_list = gen.filled(lo, hi)
             except Exception as exc:

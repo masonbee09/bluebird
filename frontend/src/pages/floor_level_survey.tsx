@@ -42,12 +42,18 @@ function FloorLevelSurveyPage() {
     const [contourEndColor, setContourEndColor] = useState<string>(() => {
         try { return localStorage.getItem("fls.contourEndColor") ?? "#dc2626"; } catch { return "#dc2626"; }
     });
+    const [contourFill, setContourFill] = useState<boolean>(() => {
+        try { return localStorage.getItem("fls.contourFill") !== "0"; } catch { return true; }
+    });
     useEffect(() => {
         try { localStorage.setItem("fls.contourStartColor", contourStartColor); } catch { /* ignore */ }
     }, [contourStartColor]);
     useEffect(() => {
         try { localStorage.setItem("fls.contourEndColor", contourEndColor); } catch { /* ignore */ }
     }, [contourEndColor]);
+    useEffect(() => {
+        try { localStorage.setItem("fls.contourFill", contourFill ? "1" : "0"); } catch { /* ignore */ }
+    }, [contourFill]);
 
     const giveContourSpacing = () => contourSpacing ?? 0.1;
     const givePointHeight = () => pointHeight ?? 0.0;
@@ -124,6 +130,8 @@ function FloorLevelSurveyPage() {
                         setGuideOpen={setGuideOpen}
                         contourStartColor={contourStartColor}
                         contourEndColor={contourEndColor}
+                        contourFill={contourFill}
+                        setContourFill={setContourFill}
                         onActiveHeightChange={setPointHeight}
                     />
                 </main>

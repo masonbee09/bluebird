@@ -31,6 +31,8 @@ interface FLSProps {
     setGuideOpen: (v: boolean) => void;
     contourStartColor: string;
     contourEndColor: string;
+    contourFill: boolean;
+    setContourFill: (v: boolean) => void;
     onActiveHeightChange?: (z: number | null) => void;
 }
 
@@ -39,7 +41,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, onActiveHeightChange }: FLSProps) {
+function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -234,12 +236,14 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
 
         switch (tool) {
             case "draw_point": {
-                const snapped = snapToGrid(pointerPosition.x, pointerPosition.y);
-                const existing = controller.findPointIndexAt(snapped.x, snapped.y, HIT_TOLERANCE_WORLD);
+                const target = evt.altKey
+                    ? snapToGrid(pointerPosition.x, pointerPosition.y)
+                    : { x: pointerPosition.x, y: pointerPosition.y };
+                const existing = controller.findPointIndexAt(target.x, target.y, HIT_TOLERANCE_WORLD);
                 if (existing !== -1) {
                     controller.selectPointByIndex(existing);
                 } else {
-                    addPoint(snapped.x, snapped.y, getPointHeight ? getPointHeight() : 0);
+                    addPoint(target.x, target.y, getPointHeight ? getPointHeight() : 0);
                 }
                 break;
             }
@@ -299,8 +303,10 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
             pointDrag.moved = true;
             const pointer = stage.getRelativePointerPosition();
             if (!pointer) return;
-            const snapped = snapToGrid(pointer.x, pointer.y);
-            controller.movePointTo(pointDrag.index, snapped.x, snapped.y);
+            const target = evt.altKey
+                ? snapToGrid(pointer.x, pointer.y)
+                : { x: pointer.x, y: pointer.y };
+            controller.movePointTo(pointDrag.index, target.x, target.y);
             return;
         }
 
@@ -823,6 +829,7 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                     data={contourData}
                     startColor={contourStartColor}
                     endColor={contourEndColor}
+                    showFill={contourFill}
                 />
 
                 <Layer>
@@ -887,6 +894,21 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                         onChange={e => setShowMajorGrid(e.target.checked)}
                     />
                     <span>Show major grid</span>
+                </label>
+                <label className="fls-view-switch" title="Toggle contour color fill">
+                    <span className="fls-view-switch-label">Color fill</span>
+                    <span
+                        className={`fls-view-switch-track${contourFill ? " is-on" : ""}`}
+                        aria-hidden="true">
+                        <input
+                            type="checkbox"
+                            className="fls-view-switch-input"
+                            checked={contourFill}
+                            onChange={e => setContourFill(e.target.checked)}
+                            aria-label="Toggle contour color fill"
+                        />
+                        <span className="fls-view-switch-thumb" />
+                    </span>
                 </label>
             </div>
 
