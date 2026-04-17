@@ -1,8 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
-import FloorLevelSurvey from "../components/floor_level_survey/floorlevelsurvey";
+import { useEffect, useMemo, useRef, useState } from "react";
+import FloorLevelSurvey, { type FLSApi } from "../components/floor_level_survey/floorlevelsurvey";
 import { FloatInput } from "../components";
-import { SelectIcon, WallIcon, PointIcon, SolveIcon } from "../components/floor_level_survey/tool_icons";
+import {
+    SelectIcon,
+    WallIcon,
+    PointIcon,
+    SolveIcon,
+    SaveIcon,
+    OpenIcon,
+    PdfIcon,
+} from "../components/floor_level_survey/tool_icons";
 import { interpolateContourColor } from "../components/floor_level_survey/contour_colors";
+import {
+    saveProjectFile,
+    readProjectFile,
+    exportCanvasAsPDF,
+} from "../components/floor_level_survey/project_io";
 import type { Tool } from "../components/floor_level_survey/shape_types";
 import "./div_types.css";
 import "./floor_level_survey.css";
@@ -58,8 +71,87 @@ function FloorLevelSurveyPage() {
     const giveContourSpacing = () => contourSpacing ?? 0.1;
     const givePointHeight = () => pointHeight ?? 0.0;
 
+    const flsApiRef = useRef<FLSApi | null>(null);
+    const openInputRef = useRef<HTMLInputElement | null>(null);
+
     function triggerSolve() {
         setSolveTrigger(prev => prev + 1);
+    }
+
+    function currentSettings() {
+        return {
+            contourSpacing,
+            pointHeight,
+            showMajorGrid,
+            showMinimap,
+            contourStartColor,
+            contourEndColor,
+            contourFill,
+        };
+    }
+
+    function handleSaveProject() {
+        const api = flsApiRef.current;
+        if (!api) return;
+        try {
+            saveProjectFile(api.getShapes(), currentSettings());
+        } catch (err) {
+            console.error(err);
+            window.alert("Failed to save project file.");
+        }
+    }
+
+    function handleOpenProjectClick() {
+        openInputRef.current?.click();
+    }
+
+    async function handleOpenProjectFile(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+        const api = flsApiRef.current;
+        if (!api) return;
+        try {
+            const project = await readProjectFile(file);
+            api.loadShapes(project.shapes);
+            const s = project.settings;
+            if (s) {
+                setContourSpacing(s.contourSpacing ?? 0.1);
+                setPointHeight(s.pointHeight ?? 0.0);
+                setShowMajorGrid(!!s.showMajorGrid);
+                setShowMinimap(!!s.showMinimap);
+                if (s.contourStartColor) setContourStartColor(s.contourStartColor);
+                if (s.contourEndColor) setContourEndColor(s.contourEndColor);
+                setContourFill(!!s.contourFill);
+            }
+        } catch (err) {
+            console.error(err);
+            const message = err instanceof Error ? err.message : "Failed to read project file.";
+            window.alert(`Import failed: ${message}`);
+        }
+    }
+
+    function handleExportPDF() {
+        const api = flsApiRef.current;
+        if (!api) return;
+        try {
+            const dataUrl = api.getStageDataURL(2);
+            if (!dataUrl) {
+                window.alert("Canvas is not ready for export yet.");
+                return;
+            }
+            const { width, height } = api.getStageSize();
+            exportCanvasAsPDF({
+                dataUrl,
+                stageWidth: width,
+                stageHeight: height,
+                shapes: api.getShapes(),
+                settings: currentSettings(),
+            });
+        } catch (err) {
+            console.error(err);
+            window.alert("Failed to export PDF.");
+        }
     }
 
     const contourGradientCss = useMemo(() => {
@@ -76,6 +168,33 @@ function FloorLevelSurveyPage() {
     return (
         <div className="fls-page">
             <aside className="fls-toolstrip" aria-label="Tools">
+                <button
+                    type="button"
+                    className="fls-toolstrip-btn"
+                    onClick={handleOpenProjectClick}
+                    title="Open project (.json)"
+                    aria-label="Open project">
+                    <OpenIcon />
+                </button>
+                <button
+                    type="button"
+                    className="fls-toolstrip-btn"
+                    onClick={handleSaveProject}
+                    title="Save project (.json)"
+                    aria-label="Save project">
+                    <SaveIcon />
+                </button>
+                <button
+                    type="button"
+                    className="fls-toolstrip-btn"
+                    onClick={handleExportPDF}
+                    title="Export as PDF"
+                    aria-label="Export as PDF">
+                    <PdfIcon />
+                </button>
+
+                <div className="fls-toolstrip-divider" />
+
                 {TOOLS.map(({ id, label, shortcut, Icon }) => (
                     <button
                         key={id}
@@ -112,11 +231,20 @@ function FloorLevelSurveyPage() {
                     aria-pressed={guideOpen}>
                     <span className="fls-toolstrip-help-glyph">?</span>
                 </button>
+
+                <input
+                    ref={openInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    style={{ display: "none" }}
+                    onChange={handleOpenProjectFile}
+                />
             </aside>
 
             <div className="fls-workspace">
                 <main className="fls-canvas-host">
                     <FloorLevelSurvey
+                        apiRef={flsApiRef}
                         tool={tool}
                         setTool={setTool}
                         getContourSpacing={giveContourSpacing}

@@ -107,3 +107,35 @@ export function MinusIcon(props: SVGProps<SVGSVGElement>) {
         </svg>
     );
 }
+
+
+export function SaveIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...baseProps} {...props}>
+            <path d="M5 4 H16 L20 8 V20 H4 V5 A1 1 0 0 1 5 4 Z" />
+            <path d="M8 4 V9 H15 V4" />
+            <rect x="7" y="13" width="10" height="6" rx="0.6" />
+        </svg>
+    );
+}
+
+
+export function OpenIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...baseProps} {...props}>
+            <path d="M3 7 A1 1 0 0 1 4 6 H9 L11 8 H20 A1 1 0 0 1 21 9 V18 A1 1 0 0 1 20 19 H4 A1 1 0 0 1 3 18 Z" />
+            <path d="M3 11 H21" />
+        </svg>
+    );
+}
+
+
+export function PdfIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...baseProps} {...props}>
+            <path d="M7 3 H14 L19 8 V20 A1 1 0 0 1 18 21 H7 A1 1 0 0 1 6 20 V4 A1 1 0 0 1 7 3 Z" />
+            <path d="M14 3 V8 H19" />
+            <text x="12" y="17.5" textAnchor="middle" fontSize="6" fontFamily="Arial, sans-serif" fontWeight="700" fill="currentColor" stroke="none">PDF</text>
+        </svg>
+    );
+}

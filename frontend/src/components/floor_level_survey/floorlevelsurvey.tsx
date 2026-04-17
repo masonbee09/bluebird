@@ -17,7 +17,16 @@ import ContourLegend from "./contour_legend";
 import "./floorlevelsurvey.css";
 
 
+export interface FLSApi {
+    getShapes: () => Shape[];
+    loadShapes: (shapes: Shape[]) => void;
+    getStageDataURL: (pixelRatio?: number) => string | null;
+    getStageSize: () => { width: number; height: number };
+}
+
+
 interface FLSProps {
+    apiRef?: React.MutableRefObject<FLSApi | null>;
     tool: Tool;
     setTool: (t: Tool) => void;
     getContourSpacing: () => number;
@@ -41,7 +50,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange }: FLSProps) {
+function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -750,6 +759,26 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
         if (selectedZ === null) return;
         onActiveHeightChange(selectedZ);
     }, [selectedZ, onActiveHeightChange]);
+
+    useEffect(() => {
+        if (!apiRef) return;
+        apiRef.current = {
+            getShapes: () => controller.shapes.filter(s => !(s.type === "wall" && s.temporary)),
+            loadShapes: (shapes: Shape[]) => controller.loadShapes(shapes),
+            getStageDataURL: (pixelRatio = 2) => {
+                const stage = stageRef.current;
+                if (!stage) return null;
+                return stage.toDataURL({ pixelRatio, mimeType: "image/png" });
+            },
+            getStageSize: () => ({
+                width: stageDimensions.width,
+                height: stageDimensions.height,
+            }),
+        };
+        return () => {
+            if (apiRef) apiRef.current = null;
+        };
+    }, [apiRef, controller, stageDimensions.width, stageDimensions.height]);
 
 
     // Render

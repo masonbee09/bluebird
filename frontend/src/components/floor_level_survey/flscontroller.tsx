@@ -91,6 +91,21 @@ class FLSController {
         this.notify();
     }
 
+    /** Replace the current scene with the supplied shapes. Clears selection and history. */
+    loadShapes(shapes: Shape[]) {
+        this.shapes = shapes
+            .filter(s => !this.isTemporary(s))
+            .map(s => {
+                const copy: Shape = { ...s, selected: false };
+                if (copy.type === "wall") copy.temporary = false;
+                return copy;
+            });
+        this.selectedIndex = -1;
+        this.history = [];
+        this.future = [];
+        this.notify();
+    }
+
     addShapes(shapes: Shape[]) {
         const anyPersistent = shapes.some(s => !this.isTemporary(s));
         if (anyPersistent) {
