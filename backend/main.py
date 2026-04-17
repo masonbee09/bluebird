@@ -52,7 +52,11 @@ def beam_calc(beam: BeamJSON):
 
 @app.post("/fls_get_contours")
 def fls_get_contours(fls_input: ContourInput):
-    output = fls_input.get_output()
+    try:
+        output = fls_input.get_output()
+    except Exception as exc:
+        logging.exception("Failed to compute contour output")
+        return {"status": "Failure", "message": str(exc)}
 
     lines = []
     for i in range(len(output.lines)):
@@ -61,29 +65,25 @@ def fls_get_contours(fls_input: ContourInput):
             lines[i].append([])
             for k in range(len(output.lines[i][j])):
                 lines[i][j].append({
-                    "x": output.lines[i][j][k][0],
-                    "y": output.lines[i][j][k][1],
+                    "x": float(output.lines[i][j][k][0]),
+                    "y": float(output.lines[i][j][k][1]),
                 })
 
-    # Fill bands: one entry per inter-height slab. Each has a `colorHeight`
-    # the frontend uses to pick the band's colour from the gradient ramp,
-    # plus a list of fragments (outer polygon rings, already clipped to the
-    # wall polygon).
-    bands = []
-    for b in output.bands:
-        frags = []
-        for ring in b.fragments:
-            frags.append([{"x": p[0], "y": p[1]} for p in ring])
-        bands.append({
-            "low": b.low,
-            "high": b.high,
-            "colorHeight": b.color_height,
-            "fragments": frags,
+    fills_payload = []
+    for band in (output.fills or []):
+        polygons = []
+        for poly in band.polygons:
+            rings = [[{"x": float(p[0]), "y": float(p[1])} for p in ring] for ring in poly.rings]
+            polygons.append({"rings": rings})
+        fills_payload.append({
+            "lo": band.lo,
+            "hi": band.hi,
+            "polygons": polygons,
         })
 
     return {
         "status": "Okay",
         "heights": output.input.heights,
         "lines": lines,
-        "bands": bands,
+        "fills": fills_payload,
     }

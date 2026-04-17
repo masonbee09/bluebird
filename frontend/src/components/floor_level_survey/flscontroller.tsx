@@ -10,7 +10,7 @@ import {
 } from "./style_presets";
 import MathHelper from "../../utils/math_helper";
 import Communicator from "./communicator";
-import type { Shape, PointShape, LabelShape, ContourPolyline, ContourFillBand } from "./shape_types";
+import type { Shape, PointShape, LabelShape } from "./shape_types";
 
 
 const HISTORY_LIMIT = 100;
@@ -19,8 +19,6 @@ const COALESCE_MS = 400;
 
 class FLSController {
     shapes: Shape[];
-    contours: ContourPolyline[] = [];
-    contourBands: ContourFillBand[] = [];
     OnUpdate: () => void;
     selectedIndex: number = -1;
     getContourSpacing: () => number;
@@ -37,19 +35,6 @@ class FLSController {
         this.OnUpdate = OnUpdate;
         this.getContourSpacing = getContourSpacing;
         this.communicator = new Communicator(this);
-    }
-
-    setContours(contours: ContourPolyline[], bands: ContourFillBand[] = []) {
-        this.contours = contours;
-        this.contourBands = bands;
-        this.notify();
-    }
-
-    clearContours() {
-        if (this.contours.length === 0 && this.contourBands.length === 0) return;
-        this.contours = [];
-        this.contourBands = [];
-        this.notify();
     }
 
     private notify() {

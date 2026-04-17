@@ -1,200 +1,296 @@
 from contourpy import contour_generator
-from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple
-import math
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
+from typing import List, Optional, Tuple, Any
 import numpy as np
 import logging
-from scipy.interpolate import LinearNDInterpolator
-
-from models.countouring.contour_tin import (
-    _build_triangles,
-    chaikin_smooth,
-    extend_with_wall_samples,
-    tin_contours_at_height,
-    tin_fill_band_fragments,
-)
-from models.countouring.contour_walls import (
-    build_wall_polygon,
-    clip_polygon_ring,
-    clip_polyline,
+from scipy.interpolate import (
+    LinearNDInterpolator,
+    CloughTocher2DInterpolator,
+    NearestNDInterpolator,
 )
 
+from shapely.geometry import LineString, Polygon, MultiPolygon
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import polygonize, unary_union
+from matplotlib.path import Path as MplPath
 
+
+WallSegment = Tuple[Tuple[float, float], Tuple[float, float]]
+
+
+def _build_wall_polygon(segments: List[WallSegment]) -> Optional[BaseGeometry]:
+    """Attempt to build an enclosing polygon (or multipolygon) from wall segments.
+
+    The walls are individual line segments. We union them and then polygonize
+    to extract any enclosed regions. If no closed region is found, return None.
+    """
+    if not segments:
+        return None
+    lines = []
+    for (a, b) in segments:
+        if a == b:
+            continue
+        lines.append(LineString([a, b]))
+    if not lines:
+        return None
+    merged = unary_union(lines)
+    polys = list(polygonize(merged))
+    if not polys:
+        return None
+    if len(polys) == 1:
+        return polys[0]
+    return MultiPolygon(polys)
+
+
+def _polygon_mask(geom: Optional[BaseGeometry], Xi: np.ndarray, Yi: np.ndarray) -> np.ndarray:
+    """Return a boolean mask, same shape as Xi, True where (x,y) is inside geom.
+
+    Uses matplotlib.Path for fast vectorized containment checks. Holes are
+    respected. If geom is None, all cells are considered inside.
+    """
+    if geom is None:
+        return np.ones_like(Xi, dtype=bool)
+
+    points = np.column_stack([Xi.ravel(), Yi.ravel()])
+    mask = np.zeros(points.shape[0], dtype=bool)
+
+    polys = []
+    if isinstance(geom, MultiPolygon):
+        polys = list(geom.geoms)
+    elif isinstance(geom, Polygon):
+        polys = [geom]
+    else:
+        return np.ones_like(Xi, dtype=bool)
+
+    for poly in polys:
+        ext = np.asarray(poly.exterior.coords)
+        inside = MplPath(ext).contains_points(points)
+        for interior in poly.interiors:
+            hole_coords = np.asarray(interior.coords)
+            inside &= ~MplPath(hole_coords).contains_points(points)
+        mask |= inside
+
+    return mask.reshape(Xi.shape)
+
+
+def _iter_rings(geom: BaseGeometry):
+    """Yield (outer_ring, [inner_rings]) for each Polygon in geom."""
+    if isinstance(geom, MultiPolygon):
+        for poly in geom.geoms:
+            yield _coords(poly.exterior), [_coords(i) for i in poly.interiors]
+    elif isinstance(geom, Polygon):
+        yield _coords(geom.exterior), [_coords(i) for i in geom.interiors]
+
+
+def _coords(ring):
+    return [(float(x), float(y)) for (x, y) in ring.coords]
 
 
 class ContourMap(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     xs: List[float]
     ys: List[float]
     zs: List[float]
-    bounds: List[float] = Field(min_length=4, max_length=4, description="[0] = xMin, [1] = yMin, [2] = xMax, [3] = yMax")
-    resolution: int = 100
-    walls: List[List[float]] = Field(default_factory=list,
-                                      description="Flat wall segments, each as [x1, y1, x2, y2].")
-    wall_sample_spacing: float = 15.0
-    smooth_iterations: int = 2
+    bounds: List[float] = Field(min_length=4, max_length=4, description="[0]=xMin, [1]=yMin, [2]=xMax, [3]=yMax")
+    resolution: int = 150
+    wall_segments: List[Any] = Field(default_factory=list)
 
-    model_config = {"arbitrary_types_allowed": True}
+    _cached_interp: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = PrivateAttr(default=None)
+    _clip_geom_cached: Optional[BaseGeometry] = PrivateAttr(default=None)
 
-    # --- Extended sample helpers -------------------------------------
-
-    def _extended_samples(self) -> Tuple[List[float], List[float], List[float]]:
-        """(xs, ys, zs) augmented with IDW-interpolated samples along walls."""
-        return extend_with_wall_samples(
-            self.xs, self.ys, self.zs, self.walls,
-            spacing=self.wall_sample_spacing,
-        )
-
-    def _wall_polygon(self):
-        return build_wall_polygon(self.walls)
+    def _clip_geom(self) -> Optional[BaseGeometry]:
+        segs = [((s[0][0], s[0][1]), (s[1][0], s[1][1])) for s in self.wall_segments]
+        return _build_wall_polygon(segs)
 
     @property
     def interpolated(self):
-        """Dense raster of the scattered measurements. Kept for legacy callers."""
+        if self._cached_interp is None:
+            self._cached_interp = self._compute_interpolated()
+        return self._cached_interp
+
+    def _compute_interpolated(self):
         bounds = self.bounds
+        clip_geom = self._clip_geom()
+
         xi = np.linspace(bounds[0], bounds[2], self.resolution)
         yi = np.linspace(bounds[1], bounds[3], self.resolution)
         Xi, Yi = np.meshgrid(xi, yi)
-        interp = LinearNDInterpolator(
-            np.column_stack([self.xs, self.ys]),
-            self.zs,
-            fill_value=np.nan,
-        )
-        Zi = interp(Xi, Yi)
+
+        xs = np.asarray(self.xs, dtype=float)
+        ys = np.asarray(self.ys, dtype=float)
+        zs = np.asarray(self.zs, dtype=float)
+
+        pts = np.column_stack([xs, ys])
+
+        # Primary smooth interpolator: cubic Clough-Tocher (C1 continuous).
+        Zi = None
+        if len(self.xs) >= 4:
+            try:
+                interp = CloughTocher2DInterpolator(pts, zs, fill_value=np.nan)
+                Zi = interp(Xi, Yi)
+            except Exception as exc:
+                logging.warning(f"CloughTocher interpolation failed: {exc}; falling back to linear")
+
+        if Zi is None:
+            try:
+                interp = LinearNDInterpolator(pts, zs, fill_value=np.nan)
+                Zi = interp(Xi, Yi)
+            except Exception as exc:
+                logging.warning(f"LinearND interpolation failed: {exc}; using nearest")
+                Zi = np.full(Xi.shape, np.nan)
+
+        # When a wall polygon is present we fill all NaN cells with nearest-
+        # neighbour values so the interpolated field is defined everywhere on
+        # the grid. This allows contour lines to extend past the convex hull of
+        # the sample points. We then rely on the shapely intersection below to
+        # trim contours exactly at the wall boundary. Without walls we leave
+        # NaN in place so contours stop at the data hull (existing behaviour).
+        if clip_geom is not None and len(self.xs) > 0:
+            nan_mask = np.isnan(Zi)
+            if np.any(nan_mask):
+                nearest = NearestNDInterpolator(pts, zs)
+                fill_vals = nearest(Xi[nan_mask], Yi[nan_mask])
+                Zi[nan_mask] = fill_vals
+
+        self._clip_geom_cached = clip_geom
         return (Xi, Yi, Zi)
 
-    # --- Contour lines -----------------------------------------------
+    def _cached_clip(self) -> Optional[BaseGeometry]:
+        _ = self.interpolated
+        return self._clip_geom_cached
 
-    def lines_at_height(self, height: float) -> List[List[Tuple[float, float]]]:
-        """Smoothed, wall-clipped contour polylines at `height` from the TIN."""
-        xs, ys, zs = self._extended_samples()
-        polylines = tin_contours_at_height(xs, ys, zs, height)
-        poly = self._wall_polygon()
-        out: List[List[Tuple[float, float]]] = []
-        for pl in polylines:
-            for clipped in clip_polyline(pl, poly):
-                if len(clipped) < 2:
-                    continue
-                is_closed = (
-                    len(clipped) >= 3
-                    and math.isclose(clipped[0][0], clipped[-1][0], abs_tol=1e-6)
-                    and math.isclose(clipped[0][1], clipped[-1][1], abs_tol=1e-6)
-                )
-                if is_closed:
-                    smoothed = chaikin_smooth(clipped[:-1], self.smooth_iterations, closed=True)
-                    if smoothed:
-                        smoothed = smoothed + [smoothed[0]]
-                else:
-                    smoothed = chaikin_smooth(clipped, self.smooth_iterations, closed=False)
-                out.append(smoothed)
-        logging.info(
-            f"Generated {len(out)} contour polylines at height {height} (TIN, smoothed)"
-        )
-        return out
+    def lines_at_height(self, height: float):
+        Xi, Yi, Zi = self.interpolated
+        gen = contour_generator(Xi, Yi, Zi)
+        raw_lines = gen.lines(height)
 
-    def lines_at_height_raster(self, height: float):
-        """Legacy bitmap-based extractor (kept for reference / comparison)."""
-        cont_gen = contour_generator(
-            self.interpolated[0], self.interpolated[1], self.interpolated[2]
-        )
-        lines = cont_gen.lines(height)
-        return lines
+        clip = self._cached_clip()
+        if clip is None:
+            logging.info(f"Generated {len(raw_lines)} contour lines at height {height} (unclipped)")
+            return raw_lines
 
-    # --- Fill bands --------------------------------------------------
+        clipped: List[np.ndarray] = []
+        for arr in raw_lines:
+            if arr is None or len(arr) < 2:
+                continue
+            try:
+                ls = LineString([(float(p[0]), float(p[1])) for p in arr])
+            except Exception:
+                continue
+            if not ls.is_valid:
+                continue
+            inter = ls.intersection(clip)
+            if inter.is_empty:
+                continue
+            for piece in _iter_linestrings(inter):
+                coords = list(piece.coords)
+                if len(coords) >= 2:
+                    clipped.append(np.asarray(coords, dtype=float))
+        logging.info(f"Generated {len(clipped)} contour lines at height {height} (clipped)")
+        return clipped
 
-    def fill_bands(self, heights: List[float]) -> List[dict]:
-        """Return one fill-band descriptor per inter-height slab.
+    def filled_bands(self, heights: List[float]):
+        """Return list of {lo, hi, polygons} between consecutive heights.
 
-        For heights h_0 < h_1 < ... < h_n the output has n+1 entries:
-          band 0:  z <= h_0                (colorHeight = h_0)
-          band k:  h_{k-1} <= z <= h_k     (colorHeight = midpoint)
-          band n:  z >= h_n                (colorHeight = h_n)
-
-        Each band has a list of outer-ring polygon fragments
-        (each already clipped to the walls).
+        polygons is a list of polygons; each polygon is a list of rings where the
+        first ring is the outer boundary and subsequent rings are holes.
         """
-        if not heights:
+        if len(heights) < 2:
             return []
+        Xi, Yi, Zi = self.interpolated
+        gen = contour_generator(Xi, Yi, Zi, fill_type="OuterOffset")
+        clip = self._cached_clip()
 
-        xs, ys, zs = self._extended_samples()
-        triangles = _build_triangles(xs, ys, zs)
-        if not triangles:
-            return []
+        out = []
+        for i in range(len(heights) - 1):
+            lo = float(heights[i])
+            hi = float(heights[i + 1])
+            try:
+                points_list, offsets_list = gen.filled(lo, hi)
+            except Exception as exc:
+                logging.warning(f"filled({lo},{hi}) failed: {exc}")
+                out.append({"lo": lo, "hi": hi, "polygons": []})
+                continue
 
-        poly = self._wall_polygon()
-        sorted_h = sorted(set(float(h) for h in heights))
+            polygons = []
+            for pts, offsets in zip(points_list, offsets_list):
+                if pts is None or len(pts) == 0:
+                    continue
+                rings = []
+                offs = list(offsets)
+                for k in range(len(offs) - 1):
+                    ring = pts[offs[k]: offs[k + 1]]
+                    if len(ring) >= 3:
+                        rings.append([(float(p[0]), float(p[1])) for p in ring])
+                if not rings:
+                    continue
 
-        bounds: List[Tuple[float, float]] = []
-        bounds.append((-math.inf, sorted_h[0]))
-        for i in range(len(sorted_h) - 1):
-            bounds.append((sorted_h[i], sorted_h[i + 1]))
-        bounds.append((sorted_h[-1], math.inf))
+                shapely_poly = _rings_to_polygon(rings)
+                if shapely_poly is None or shapely_poly.is_empty:
+                    continue
 
-        out: List[dict] = []
-        for h_low, h_high in bounds:
-            fragments_raw = tin_fill_band_fragments(
-                xs, ys, zs, h_low, h_high, triangles=triangles,
-            )
-            fragments_clipped: List[List[Tuple[float, float]]] = []
-            for ring in fragments_raw:
-                for clipped_ring in clip_polygon_ring(ring, poly):
-                    if len(clipped_ring) >= 4:
-                        # Shapely closes rings with an identical first/last
-                        # coord; strip that duplicate before storing so the
-                        # frontend just renders a `closed` Konva Line.
-                        if (
-                            clipped_ring[0][0] == clipped_ring[-1][0]
-                            and clipped_ring[0][1] == clipped_ring[-1][1]
-                        ):
-                            clipped_ring = clipped_ring[:-1]
-                        if len(clipped_ring) >= 3:
-                            fragments_clipped.append(clipped_ring)
+                if clip is not None:
+                    try:
+                        clipped_geom = shapely_poly.intersection(clip)
+                    except Exception:
+                        clipped_geom = shapely_poly
+                else:
+                    clipped_geom = shapely_poly
 
-            if math.isfinite(h_low) and math.isfinite(h_high):
-                color_h = 0.5 * (h_low + h_high)
-            elif math.isfinite(h_low):
-                color_h = h_low
-            else:
-                color_h = h_high
+                if clipped_geom.is_empty:
+                    continue
 
-            out.append({
-                "low": h_low if math.isfinite(h_low) else None,
-                "high": h_high if math.isfinite(h_high) else None,
-                "colorHeight": color_h,
-                "fragments": fragments_clipped,
-            })
+                for outer, holes in _iter_rings(clipped_geom):
+                    polygons.append([outer] + list(holes))
+
+            out.append({"lo": lo, "hi": hi, "polygons": polygons})
         return out
 
 
+def _iter_linestrings(geom: BaseGeometry):
+    from shapely.geometry import LineString as _LS, MultiLineString, GeometryCollection
+    if isinstance(geom, _LS):
+        yield geom
+    elif isinstance(geom, MultiLineString):
+        for g in geom.geoms:
+            yield g
+    elif isinstance(geom, GeometryCollection):
+        for g in geom.geoms:
+            yield from _iter_linestrings(g)
 
 
-def CreateContourMap(xs: List[float], ys: List[float], zs: List[float], bounds: List[float], resolution: int = 50,
-                     walls: Optional[List[List[float]]] = None):
-    payload = {
+def _rings_to_polygon(rings):
+    """Construct a shapely Polygon from a list of rings where the first ring is outer and the rest are holes."""
+    if not rings:
+        return None
+    try:
+        outer = rings[0]
+        holes = rings[1:] if len(rings) > 1 else None
+        poly = Polygon(outer, holes)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        return poly
+    except Exception:
+        return None
+
+
+def CreateContourMap(
+    xs: List[float],
+    ys: List[float],
+    zs: List[float],
+    bounds: List[float],
+    resolution: int = 150,
+    wall_segments: Optional[List[WallSegment]] = None,
+):
+    return ContourMap.model_validate({
         "xs": xs,
         "ys": ys,
         "zs": zs,
         "bounds": bounds,
         "resolution": resolution,
-    }
-    if walls is not None:
-        payload["walls"] = walls
-    return ContourMap.model_validate(payload)
+        "wall_segments": wall_segments or [],
+    })
 
 
-def find_closest_i_j(x, y, Xi, Yi, Zi):
-    min_dist = math.inf
-    min_i = 0
-    min_j = 0
-    for i in range(Xi.shape[0]):
-        for j in range(Xi.shape[1]):
-            if math.isnan(Zi[i, j]):
-                continue
-            dist = (x - Xi[i, j]) ** 2 + (y - Yi[i, j]) ** 2
-            if dist < min_dist:
-                min_dist = dist
-                min_i = i
-                min_j = j
-    return min_i, min_j
-
-
-__all__ = ['ContourMap', 'CreateContourMap']
+__all__ = ["ContourMap", "CreateContourMap"]

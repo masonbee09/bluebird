@@ -12,6 +12,8 @@ import ZoomControl from "./zoom_control";
 import ContextMenu, { type ContextMenuItem } from "./context_menu";
 import { UndoIcon, RedoIcon } from "./tool_icons";
 import { snapToGrid } from "./grid_constants";
+import ContourLayer, { type ContourData } from "./contour_layer";
+import ContourLegend from "./contour_legend";
 import "./floorlevelsurvey.css";
 
 
@@ -25,26 +27,11 @@ interface FLSProps {
     setShowMajorGrid: (v: boolean) => void;
     showMinimap: boolean;
     setShowMinimap: (v: boolean) => void;
-    showContours: boolean;
-    setShowContours: (v: boolean) => void;
-    contourStartColor: string;
-    contourEndColor: string;
     guideOpen: boolean;
     setGuideOpen: (v: boolean) => void;
+    contourStartColor: string;
+    contourEndColor: string;
     onActiveHeightChange?: (z: number | null) => void;
-}
-
-interface ContourApiResponse {
-    status: string;
-    heights?: number[];
-    lines?: { x: number; y: number }[][][];
-    bands?: {
-        low: number | null;
-        high: number | null;
-        colorHeight: number;
-        fragments: { x: number; y: number }[][];
-    }[];
-    Message?: string;
 }
 
 
@@ -52,33 +39,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function hexToHsl(hex: string): { h: number; s: number; l: number } {
-    let h6 = hex.trim().replace(/^#/, "");
-    if (h6.length === 3) {
-        h6 = h6.split("").map(c => c + c).join("");
-    }
-    if (h6.length !== 6) return { h: 0, s: 0, l: 0.5 };
-    const r = parseInt(h6.slice(0, 2), 16) / 255;
-    const g = parseInt(h6.slice(2, 4), 16) / 255;
-    const b = parseInt(h6.slice(4, 6), 16) / 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const l = (max + min) / 2;
-    let h = 0;
-    let s = 0;
-    if (max !== min) {
-        const d = max - min;
-        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
-        else if (max === g) h = (b - r) / d + 2;
-        else h = (r - g) / d + 4;
-        h *= 60;
-    }
-    return { h, s, l };
-}
-
-
-function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, showContours, setShowContours, contourStartColor, contourEndColor, guideOpen, setGuideOpen, onActiveHeightChange }: FLSProps) {
+function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, onActiveHeightChange }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -86,6 +47,7 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
     const [wallPoly, setWallPoly] = useState<{ x: number; y: number }[]>([]);
     const lastWallClickRef = useRef<{ t: number; x: number; y: number } | null>(null);
     const [exampleInjected, setExampleInjected] = useState(false);
+    const [contourData, setContourData] = useState<ContourData | null>(null);
 
     const [viewport, setViewport] = useState({ scale: 1, x: 0, y: 0 });
     const [spaceHeld, setSpaceHeld] = useState(false);
@@ -117,57 +79,16 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
     const stageRef = useRef<Konva.Stage | null>(null);
 
     useEffect(() => {
-        if (solveTrigger === undefined) return;
+        if (solveTrigger === undefined || solveTrigger === 0) return;
         let cancelled = false;
         (async () => {
             try {
-                const data = (await controller.solveContours()) as ContourApiResponse;
+                const data = await controller.solveContours();
                 if (cancelled) return;
-                if (data.status !== "Okay" || !data.lines || !data.heights) {
-                    console.warn("Contour solve failed", data);
-                    controller.clearContours();
-                    return;
-                }
-                const polylines = [];
-                for (let i = 0; i < data.lines.length; i++) {
-                    const h = data.heights[i];
-                    const group = data.lines[i];
-                    for (const poly of group) {
-                        if (!poly || poly.length < 2) continue;
-                        const pts: number[] = new Array(poly.length * 2);
-                        for (let k = 0; k < poly.length; k++) {
-                            pts[2 * k] = poly[k].x;
-                            pts[2 * k + 1] = poly[k].y;
-                        }
-                        polylines.push({ height: h, points: pts });
-                    }
-                }
-
-                const bands = [];
-                if (data.bands) {
-                    for (const b of data.bands) {
-                        const fragments: number[][] = [];
-                        for (const ring of b.fragments) {
-                            if (!ring || ring.length < 3) continue;
-                            const flat: number[] = new Array(ring.length * 2);
-                            for (let k = 0; k < ring.length; k++) {
-                                flat[2 * k] = ring[k].x;
-                                flat[2 * k + 1] = ring[k].y;
-                            }
-                            fragments.push(flat);
-                        }
-                        bands.push({
-                            low: b.low,
-                            high: b.high,
-                            colorHeight: b.colorHeight,
-                            fragments,
-                        });
-                    }
-                }
-
-                controller.setContours(polylines, bands);
+                setContourData(data as ContourData);
             } catch (err) {
-                if (!cancelled) console.error("Contour request failed:", err);
+                console.error("Failed to solve contours:", err);
+                if (!cancelled) setContourData(null);
             }
         })();
         return () => { cancelled = true; };
@@ -778,7 +699,6 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
         if (lower === "p") { setTool("draw_point"); return; }
         if (lower === "g") { setShowMajorGrid(!showMajorGrid); return; }
         if (lower === "m") { setShowMinimap(!showMinimap); return; }
-        if (lower === "c") { setShowContours(!showContours); return; }
         if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomCenter(1.1); return; }
         if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomCenter(1 / 1.1); return; }
         if (lower === "f" || e.key === "0") { e.preventDefault(); frameAll(); return; }
@@ -786,7 +706,7 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
         if (e.key === '\\') {
             injectExampleShapes();
         }
-    }, [tool, wallPoly, controller, setTool, zoomCenter, frameAll, spaceHeld, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, showContours, setShowContours, guideOpen, setGuideOpen, injectExampleShapes]);
+    }, [tool, wallPoly, controller, setTool, zoomCenter, frameAll, spaceHeld, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, injectExampleShapes]);
 
     const handleKeyUp = useCallback((e: KeyboardEvent) => {
         if (e.code === "Space") {
@@ -818,59 +738,6 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
     // Live height readout shown while a point is selected
 
     const selectedZ = controller.getFirstSelectedHeight();
-
-    // Contour colour ramp (cool → warm by height). We span both the
-    // polyline heights and the band midpoints so the ramp endpoints stay
-    // at the extremes of what's actually drawn (the open-ended below/above
-    // bands carry the lowest and highest `colorHeight` values).
-    const contourHeightBounds = (() => {
-        const hasLines = controller.contours.length > 0;
-        const hasBands = controller.contourBands.length > 0;
-        if (!hasLines && !hasBands) return { min: 0, max: 1 };
-        let min = Infinity;
-        let max = -Infinity;
-        for (const c of controller.contours) {
-            if (c.height < min) min = c.height;
-            if (c.height > max) max = c.height;
-        }
-        for (const b of controller.contourBands) {
-            if (b.colorHeight < min) min = b.colorHeight;
-            if (b.colorHeight > max) max = b.colorHeight;
-        }
-        if (!isFinite(min) || !isFinite(max) || min === max) {
-            return { min: min, max: min + 1 };
-        }
-        return { min, max };
-    })();
-
-    const startHsl = hexToHsl(contourStartColor);
-    const endHsl = hexToHsl(contourEndColor);
-
-    const hslComponentsForHeight = (h: number): { h: number; s: number; l: number } => {
-        const { min, max } = contourHeightBounds;
-        const t = Math.max(0, Math.min(1, (h - min) / (max - min)));
-        // Direct (non-wrapped) HSL interpolation: when the hues are far apart
-        // (e.g. blue → red) this naturally traverses cyan / green / yellow,
-        // which produces the rainbow ramp seen in the reference image.
-        return {
-            h: startHsl.h + (endHsl.h - startHsl.h) * t,
-            s: startHsl.s + (endHsl.s - startHsl.s) * t,
-            l: startHsl.l + (endHsl.l - startHsl.l) * t,
-        };
-    };
-
-    const colorForHeight = (h: number): string => {
-        const c = hslComponentsForHeight(h);
-        return `hsl(${c.h.toFixed(1)}, ${(c.s * 100).toFixed(1)}%, ${(c.l * 100).toFixed(1)}%)`;
-    };
-
-    // Slightly lighter and very translucent for fills so the contour lines
-    // drawn on top still read clearly against them.
-    const fillColorForHeight = (h: number): string => {
-        const c = hslComponentsForHeight(h);
-        const lightened = Math.min(1, c.l + 0.12);
-        return `hsla(${c.h.toFixed(1)}, ${(c.s * 100).toFixed(1)}%, ${(lightened * 100).toFixed(1)}%, 0.55)`;
-    };
 
     useEffect(() => {
         if (!onActiveHeightChange) return;
@@ -952,41 +819,11 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                     showMajor={showMajorGrid}
                 />
 
-                {showContours && controller.contourBands.length > 0 && (
-                    <Layer listening={false}>
-                        {controller.contourBands.flatMap((band, bIdx) =>
-                            band.fragments.map((pts, fIdx) => (
-                                <Line
-                                    key={`band-${bIdx}-${fIdx}`}
-                                    points={pts}
-                                    closed
-                                    fill={fillColorForHeight(band.colorHeight)}
-                                    stroke={fillColorForHeight(band.colorHeight)}
-                                    strokeWidth={0.5}
-                                    strokeScaleEnabled={false}
-                                    perfectDrawEnabled={false}
-                                />
-                            ))
-                        )}
-                    </Layer>
-                )}
-
-                {showContours && controller.contours.length > 0 && (
-                    <Layer listening={false}>
-                        {controller.contours.map((cl, idx) => (
-                            <Line
-                                key={`contour-${idx}`}
-                                points={cl.points}
-                                stroke={colorForHeight(cl.height)}
-                                strokeWidth={1.6}
-                                strokeScaleEnabled={false}
-                                lineCap="round"
-                                lineJoin="round"
-                                opacity={0.95}
-                            />
-                        ))}
-                    </Layer>
-                )}
+                <ContourLayer
+                    data={contourData}
+                    startColor={contourStartColor}
+                    endColor={contourEndColor}
+                />
 
                 <Layer>
                     {controller.getShapesAsShapeData().map((shape, index) => {
@@ -1016,6 +853,15 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                 </Layer>
             </Stage>
 
+            {contourData && contourData.heights?.length > 0 && (
+                <ContourLegend
+                    startColor={contourStartColor}
+                    endColor={contourEndColor}
+                    minZ={Math.min(...contourData.heights)}
+                    maxZ={Math.max(...contourData.heights)}
+                />
+            )}
+
             {selectedZ !== null && pointerScreen && (
                 <div
                     className="fls-height-readout"
@@ -1041,14 +887,6 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                         onChange={e => setShowMajorGrid(e.target.checked)}
                     />
                     <span>Show major grid</span>
-                </label>
-                <label className="fls-view-toggle">
-                    <input
-                        type="checkbox"
-                        checked={showContours}
-                        onChange={e => setShowContours(e.target.checked)}
-                    />
-                    <span>Show contours</span>
                 </label>
             </div>
 

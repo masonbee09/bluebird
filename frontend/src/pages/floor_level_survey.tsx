@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import FloorLevelSurvey from "../components/floor_level_survey/floorlevelsurvey";
 import { FloatInput } from "../components";
 import { SelectIcon, WallIcon, PointIcon, SolveIcon } from "../components/floor_level_survey/tool_icons";
+import { interpolateContourColor } from "../components/floor_level_survey/contour_colors";
 import type { Tool } from "../components/floor_level_survey/shape_types";
 import "./div_types.css";
 import "./floor_level_survey.css";
@@ -29,15 +30,24 @@ function FloorLevelSurveyPage() {
     const [solveTrigger, setSolveTrigger] = useState<number>(0);
     const [showMajorGrid, setShowMajorGrid] = useState<boolean>(true);
     const [showMinimap, setShowMinimap] = useState<boolean>(true);
-    const [showContours, setShowContours] = useState<boolean>(true);
-    const [contourStartColor, setContourStartColor] = useState<string>("#2563eb");
-    const [contourEndColor, setContourEndColor] = useState<string>("#dc2626");
     const [guideOpen, setGuideOpen] = useState<boolean>(() => {
         try { return localStorage.getItem("fls.shortcutGuide.open") === "1"; } catch { return false; }
     });
     useEffect(() => {
         try { localStorage.setItem("fls.shortcutGuide.open", guideOpen ? "1" : "0"); } catch { /* ignore */ }
     }, [guideOpen]);
+    const [contourStartColor, setContourStartColor] = useState<string>(() => {
+        try { return localStorage.getItem("fls.contourStartColor") ?? "#1e40af"; } catch { return "#1e40af"; }
+    });
+    const [contourEndColor, setContourEndColor] = useState<string>(() => {
+        try { return localStorage.getItem("fls.contourEndColor") ?? "#dc2626"; } catch { return "#dc2626"; }
+    });
+    useEffect(() => {
+        try { localStorage.setItem("fls.contourStartColor", contourStartColor); } catch { /* ignore */ }
+    }, [contourStartColor]);
+    useEffect(() => {
+        try { localStorage.setItem("fls.contourEndColor", contourEndColor); } catch { /* ignore */ }
+    }, [contourEndColor]);
 
     const giveContourSpacing = () => contourSpacing ?? 0.1;
     const givePointHeight = () => pointHeight ?? 0.0;
@@ -45,6 +55,17 @@ function FloorLevelSurveyPage() {
     function triggerSolve() {
         setSolveTrigger(prev => prev + 1);
     }
+
+    const contourGradientCss = useMemo(() => {
+        const stops: string[] = [];
+        const STOPS = 10;
+        for (let i = 0; i <= STOPS; i++) {
+            const t = i / STOPS;
+            const color = interpolateContourColor(contourStartColor, contourEndColor, t);
+            stops.push(`${color} ${(t * 100).toFixed(1)}%`);
+        }
+        return `linear-gradient(to right, ${stops.join(", ")})`;
+    }, [contourStartColor, contourEndColor]);
 
     return (
         <div className="fls-page">
@@ -99,12 +120,10 @@ function FloorLevelSurveyPage() {
                         setShowMajorGrid={setShowMajorGrid}
                         showMinimap={showMinimap}
                         setShowMinimap={setShowMinimap}
-                        showContours={showContours}
-                        setShowContours={setShowContours}
-                        contourStartColor={contourStartColor}
-                        contourEndColor={contourEndColor}
                         guideOpen={guideOpen}
                         setGuideOpen={setGuideOpen}
+                        contourStartColor={contourStartColor}
+                        contourEndColor={contourEndColor}
                         onActiveHeightChange={setPointHeight}
                     />
                 </main>
@@ -125,32 +144,34 @@ function FloorLevelSurveyPage() {
                     <div className="fls-bottom-divider" />
 
                     <div className="fls-bottom-group">
-                        <div className="fls-bottom-group-title">Contour colors</div>
+                        <div className="fls-bottom-group-title">Contour Colors</div>
                         <div className="fls-bottom-group-content">
-                            <label className="fls-color-field" title="Color assigned to the lowest contour height">
-                                <span className="fls-color-label">Low</span>
+                            <label className="fls-color-field">
+                                <span className="fls-color-label">Start</span>
                                 <input
                                     type="color"
+                                    className="fls-color-input"
                                     value={contourStartColor}
                                     onChange={e => setContourStartColor(e.target.value)}
-                                    aria-label="Start color (low)"
+                                    aria-label="Contour start color"
                                 />
+                                <span className="fls-color-hex">{contourStartColor.toUpperCase()}</span>
                             </label>
                             <div
-                                className="fls-color-gradient"
+                                className="fls-color-preview"
                                 aria-hidden="true"
-                                style={{
-                                    background: `linear-gradient(to right, ${contourStartColor}, ${contourEndColor})`,
-                                }}
+                                style={{ backgroundImage: contourGradientCss }}
                             />
-                            <label className="fls-color-field" title="Color assigned to the highest contour height">
-                                <span className="fls-color-label">High</span>
+                            <label className="fls-color-field">
+                                <span className="fls-color-label">End</span>
                                 <input
                                     type="color"
+                                    className="fls-color-input"
                                     value={contourEndColor}
                                     onChange={e => setContourEndColor(e.target.value)}
-                                    aria-label="End color (high)"
+                                    aria-label="Contour end color"
                                 />
+                                <span className="fls-color-hex">{contourEndColor.toUpperCase()}</span>
                             </label>
                         </div>
                     </div>
@@ -158,9 +179,7 @@ function FloorLevelSurveyPage() {
                     <div className="fls-bottom-spacer" />
 
                     <div className="fls-bottom-hint">
-                        Right-click a wall for options. Scroll or arrow keys
-                        adjust the selected point's height by <kbd>0.1</kbd>.
-                        Press <kbd>?</kbd> for shortcuts.
+                        
                     </div>
                 </footer>
             </div>

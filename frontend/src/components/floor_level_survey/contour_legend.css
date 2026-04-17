@@ -1,0 +1,40 @@
+.fls-contour-legend {
+    position: absolute;
+    right: 12px;
+    top: 196px;
+    z-index: 12;
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px 10px 8px 8px;
+    background-color: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    pointer-events: none;
+}
+
+.fls-contour-legend-bar {
+    width: 14px;
+    height: 160px;
+    border-radius: 3px;
+    border: 1px solid var(--color-border-strong);
+}
+
+.fls-contour-legend-ticks {
+    position: relative;
+    min-width: 32px;
+    height: 160px;
+}
+
+.fls-contour-legend-tick {
+    position: absolute;
+    left: 0;
+    transform: translateY(50%);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: var(--color-text-muted);
+    line-height: 1;
+    white-space: nowrap;
+}

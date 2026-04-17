@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from models.countouring.contourmap import *
-import logging
 
 
 class PointInput(BaseModel):
@@ -10,42 +9,56 @@ class PointInput(BaseModel):
     z: float
 
 
+class WallInput(BaseModel):
+    """A wall is represented as a single straight segment between two points."""
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
 class ContourInput(BaseModel):
-    bounds: List[float] = Field(min_length=4, max_length=4, description="[0] = xMin, [1] = xMax, [2] = yMin, [3] = yMax")
+    bounds: List[float] = Field(min_length=4, max_length=4, description="[0]=xMin, [1]=yMin, [2]=xMax, [3]=yMax")
     points: List[PointInput]
+    walls: List[WallInput] = []
     heights: List[float]
-    resolution: int = 50
-    walls: List[List[float]] = Field(
-        default_factory=list,
-        description="Flat wall segments, each as [x1, y1, x2, y2]. Used to extend/clip contours.",
-    )
+    resolution: int = 150
 
     def get_xyzlist(self):
         return [[p.x for p in self.points], [p.y for p in self.points], [p.z for p in self.points]]
+
+    def get_wall_segments(self):
+        return [((w.x1, w.y1), (w.x2, w.y2)) for w in self.walls]
 
     def get_output(self):
         return GetOutputFromInput(self)
 
 
+class ContourBandPolygon(BaseModel):
+    """One filled polygon for a contour band. First ring is the outer boundary; remaining rings are holes."""
+    rings: List[List[List[float]]]
+
+
 class ContourBand(BaseModel):
-    low: Optional[float] = None
-    high: Optional[float] = None
-    color_height: float = 0.0
-    fragments: List[List[List[float]]] = Field(default_factory=list)
+    lo: float
+    hi: float
+    polygons: List[ContourBandPolygon]
 
 
 class ContourOutput(BaseModel):
     input: ContourInput
     lines: List
-    bands: List[ContourBand] = Field(default_factory=list)
+    fills: Optional[List[ContourBand]] = None
 
 
-def CreateContourInput(bounds: List[float], points: List[PointInput], heights: List[float], resolution: int = 50,
-                       walls: Optional[List[List[float]]] = None):
-    payload = {"bounds": bounds, "points": points, "heights": heights, "resolution": resolution}
-    if walls is not None:
-        payload["walls"] = walls
-    return ContourInput.model_validate(payload)
+def CreateContourInput(bounds: List[float], points: List[PointInput], heights: List[float], resolution: int = 150, walls: Optional[List[WallInput]] = None):
+    return ContourInput.model_validate({
+        "bounds": bounds,
+        "points": points,
+        "walls": walls or [],
+        "heights": heights,
+        "resolution": resolution,
+    })
 
 
 def CreatePointInputs(xyzlist):
@@ -57,50 +70,34 @@ def CreatePointInputs(xyzlist):
     return pointlist
 
 
-def GetContourOutput(bounds: List[float], xyzlist: List, heights: List[float], resolution=50, walls=None):
-    if len(xyzlist[0]) != 3:
-        raise Exception("xyzlist must be in form [[x1, y1, z1], [x2, y2, z2], ...]")
-    points = CreatePointInputs(xyzlist)
-    input = CreateContourInput(bounds, points, heights, resolution, walls=walls)
-    map = CreateContourMap(
-        [p.x for p in points], [p.y for p in points], [p.z for p in points],
-        bounds, resolution, walls=walls,
-    )
-    lines = []
-    for h in heights:
-        lines.append(map.lines_at_height(h))
-    bands_raw = map.fill_bands(heights)
-    bands = _bands_to_model(bands_raw)
-    output = ContourOutput.model_validate({"input": input, "lines": lines, "bands": bands})
-    return output
-
-
-def _bands_to_model(bands_raw):
-    out = []
-    for b in bands_raw:
-        frags_flat = []
-        for ring in b.get("fragments", []):
-            frags_flat.append([[float(p[0]), float(p[1])] for p in ring])
-        out.append({
-            "low": b.get("low"),
-            "high": b.get("high"),
-            "color_height": float(b.get("colorHeight", 0.0)),
-            "fragments": frags_flat,
-        })
-    return out
-
-
 def GetOutputFromInput(input: ContourInput):
-    map = CreateContourMap(
+    contour_map = CreateContourMap(
         [p.x for p in input.points],
         [p.y for p in input.points],
         [p.z for p in input.points],
         input.bounds,
-        walls=input.walls,
+        resolution=input.resolution,
+        wall_segments=input.get_wall_segments(),
     )
     lines = []
     for h in input.heights:
-        lines.append(map.lines_at_height(h))
-    bands_raw = map.fill_bands(input.heights)
-    bands = _bands_to_model(bands_raw)
-    return ContourOutput.model_validate({"input": input, "lines": lines, "bands": bands})
+        lines.append(contour_map.lines_at_height(h))
+
+    fills_raw = contour_map.filled_bands(input.heights)
+    fills = []
+    for band in fills_raw:
+        polygons = []
+        for poly in band["polygons"]:
+            rings = [[[float(x), float(y)] for (x, y) in ring] for ring in poly]
+            polygons.append(ContourBandPolygon.model_validate({"rings": rings}))
+        fills.append(ContourBand.model_validate({
+            "lo": band["lo"],
+            "hi": band["hi"],
+            "polygons": polygons,
+        }))
+
+    return ContourOutput.model_validate({
+        "input": input,
+        "lines": lines,
+        "fills": fills,
+    })
