@@ -10,7 +10,7 @@
 
 .fls-toolstrip {
     flex: 0 0 auto;
-    width: 52px;
+    width: 68px;
     padding: 10px 6px;
     display: flex;
     flex-direction: column;
@@ -25,17 +25,19 @@
 .fls-toolstrip-btn {
     appearance: none;
     position: relative;
-    width: 40px;
-    height: 40px;
-    padding: 0;
+    width: 56px;
+    min-height: 52px;
+    padding: 6px 4px 4px;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
     background-color: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
+    gap: 3px;
     transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
@@ -64,8 +66,8 @@
 
 .fls-toolstrip-shortcut {
     position: absolute;
-    right: 2px;
-    bottom: 2px;
+    right: 3px;
+    top: 3px;
     font-size: 8.5px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -78,8 +80,37 @@
     color: var(--color-primary-active);
 }
 
+.fls-toolstrip-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: var(--color-text-muted);
+    margin-top: auto;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.fls-toolstrip-btn:hover .fls-toolstrip-label {
+    color: var(--color-text);
+}
+
+.fls-toolstrip-btn.is-active .fls-toolstrip-label {
+    color: var(--color-primary-active);
+    font-weight: 600;
+}
+
+.fls-toolstrip-solve .fls-toolstrip-label {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.fls-toolstrip-solve:hover .fls-toolstrip-label {
+    color: #ffffff;
+}
+
 .fls-toolstrip-divider {
-    width: 28px;
+    width: 40px;
     height: 1px;
     background-color: var(--color-border);
     margin: 6px 0;

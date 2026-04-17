@@ -175,6 +175,7 @@ function FloorLevelSurveyPage() {
                     title="Open project (.json)"
                     aria-label="Open project">
                     <OpenIcon />
+                    <span className="fls-toolstrip-label">Open</span>
                 </button>
                 <button
                     type="button"
@@ -183,6 +184,7 @@ function FloorLevelSurveyPage() {
                     title="Save project (.json)"
                     aria-label="Save project">
                     <SaveIcon />
+                    <span className="fls-toolstrip-label">Save</span>
                 </button>
                 <button
                     type="button"
@@ -191,6 +193,7 @@ function FloorLevelSurveyPage() {
                     title="Export as PDF"
                     aria-label="Export as PDF">
                     <PdfIcon />
+                    <span className="fls-toolstrip-label">PDF</span>
                 </button>
 
                 <div className="fls-toolstrip-divider" />
@@ -206,6 +209,7 @@ function FloorLevelSurveyPage() {
                         aria-pressed={tool === id}>
                         <Icon />
                         <span className="fls-toolstrip-shortcut">{shortcut}</span>
+                        <span className="fls-toolstrip-label">{label.replace(/^Draw /, "")}</span>
                     </button>
                 ))}
 
@@ -218,6 +222,7 @@ function FloorLevelSurveyPage() {
                     title="Solve contours"
                     aria-label="Solve contours">
                     <SolveIcon />
+                    <span className="fls-toolstrip-label">Solve</span>
                 </button>
 
                 <div className="fls-toolstrip-spacer" />
@@ -230,6 +235,7 @@ function FloorLevelSurveyPage() {
                     aria-label="Keyboard shortcuts"
                     aria-pressed={guideOpen}>
                     <span className="fls-toolstrip-help-glyph">?</span>
+                    <span className="fls-toolstrip-label">Help</span>
                 </button>
 
                 <input
