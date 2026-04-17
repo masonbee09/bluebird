@@ -29,6 +29,7 @@ function FloorLevelSurveyPage() {
     const [solveTrigger, setSolveTrigger] = useState<number>(0);
     const [showMajorGrid, setShowMajorGrid] = useState<boolean>(true);
     const [showMinimap, setShowMinimap] = useState<boolean>(true);
+    const [showContours, setShowContours] = useState<boolean>(true);
     const [guideOpen, setGuideOpen] = useState<boolean>(() => {
         try { return localStorage.getItem("fls.shortcutGuide.open") === "1"; } catch { return false; }
     });
@@ -96,6 +97,8 @@ function FloorLevelSurveyPage() {
                         setShowMajorGrid={setShowMajorGrid}
                         showMinimap={showMinimap}
                         setShowMinimap={setShowMinimap}
+                        showContours={showContours}
+                        setShowContours={setShowContours}
                         guideOpen={guideOpen}
                         setGuideOpen={setGuideOpen}
                         onActiveHeightChange={setPointHeight}

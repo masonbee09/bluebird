@@ -66,6 +66,7 @@ const groups: { title: string; items: GroupedShortcut[] }[] = [
             { keys: ["0", "/", "F"], label: "Frame all / reset" },
             { keys: ["G"], label: "Toggle major grid" },
             { keys: ["M"], label: "Toggle overview map" },
+            { keys: ["C"], label: "Toggle contour lines" },
             { keys: ["?"], label: "Toggle this guide" },
         ],
     },

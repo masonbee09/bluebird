@@ -7,6 +7,8 @@ import math
 import logging
 from scipy.interpolate import LinearNDInterpolator
 
+from models.countouring.contour_tin import tin_contours_at_height
+
 
 
 
@@ -89,9 +91,25 @@ class ContourMap(BaseModel):
 
 
     def lines_at_height(self, height: float):
-        cont_gen = contour_generator(self.interpolated[0], self.interpolated[1], self.interpolated[2])
+        """Geometry-based (TIN) contour extraction.
+
+        Delaunay-triangulates the scattered samples and intersects each
+        triangle with the plane z = height, stitching adjacent segments
+        into polylines. This honors every input measurement exactly and is
+        independent of the raster resolution.
+        """
+        polylines = tin_contours_at_height(self.xs, self.ys, self.zs, height)
+        logging.info(
+            f"Generated {len(polylines)} contour polylines at height {height} (TIN)"
+        )
+        return polylines
+
+    def lines_at_height_raster(self, height: float):
+        """Legacy bitmap-based extractor (kept for reference / comparison)."""
+        cont_gen = contour_generator(
+            self.interpolated[0], self.interpolated[1], self.interpolated[2]
+        )
         lines = cont_gen.lines(height)
-        logging.info(f"Generated {len(lines)} contour lines at height {height}")
         return lines
 
 

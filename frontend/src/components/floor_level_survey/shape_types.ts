@@ -37,3 +37,15 @@ export interface LabelShape {
 }
 
 export type Shape = PointShape | WallShape | LabelShape;
+
+/**
+ * Contour lines are derived from the input points by the backend (TIN-based
+ * extraction) and are not user-editable, so they live outside the main Shape
+ * union. Each polyline is stored as a flat [x0, y0, x1, y1, ...] array so it
+ * can be fed straight to a Konva Line.
+ */
+export interface ContourPolyline {
+    height: number;
+    points: number[];
+}
+

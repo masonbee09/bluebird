@@ -25,9 +25,18 @@ interface FLSProps {
     setShowMajorGrid: (v: boolean) => void;
     showMinimap: boolean;
     setShowMinimap: (v: boolean) => void;
+    showContours: boolean;
+    setShowContours: (v: boolean) => void;
     guideOpen: boolean;
     setGuideOpen: (v: boolean) => void;
     onActiveHeightChange?: (z: number | null) => void;
+}
+
+interface ContourApiResponse {
+    status: string;
+    heights?: number[];
+    lines?: { x: number; y: number }[][][];
+    Message?: string;
 }
 
 
@@ -35,7 +44,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, onActiveHeightChange }: FLSProps) {
+function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, showContours, setShowContours, guideOpen, setGuideOpen, onActiveHeightChange }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -74,12 +83,37 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
     const stageRef = useRef<Konva.Stage | null>(null);
 
     useEffect(() => {
-        if (solveTrigger !== undefined) {
-            (async () => {
-                const contourData = await controller.solveContours();
-                console.log("Received contour data:", contourData);
-            })();
-        }
+        if (solveTrigger === undefined) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const data = (await controller.solveContours()) as ContourApiResponse;
+                if (cancelled) return;
+                if (data.status !== "Okay" || !data.lines || !data.heights) {
+                    console.warn("Contour solve failed", data);
+                    controller.clearContours();
+                    return;
+                }
+                const polylines = [];
+                for (let i = 0; i < data.lines.length; i++) {
+                    const h = data.heights[i];
+                    const group = data.lines[i];
+                    for (const poly of group) {
+                        if (!poly || poly.length < 2) continue;
+                        const pts: number[] = new Array(poly.length * 2);
+                        for (let k = 0; k < poly.length; k++) {
+                            pts[2 * k] = poly[k].x;
+                            pts[2 * k + 1] = poly[k].y;
+                        }
+                        polylines.push({ height: h, points: pts });
+                    }
+                }
+                controller.setContours(polylines);
+            } catch (err) {
+                if (!cancelled) console.error("Contour request failed:", err);
+            }
+        })();
+        return () => { cancelled = true; };
     }, [solveTrigger, controller]);
 
 
@@ -687,6 +721,7 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
         if (lower === "p") { setTool("draw_point"); return; }
         if (lower === "g") { setShowMajorGrid(!showMajorGrid); return; }
         if (lower === "m") { setShowMinimap(!showMinimap); return; }
+        if (lower === "c") { setShowContours(!showContours); return; }
         if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomCenter(1.1); return; }
         if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomCenter(1 / 1.1); return; }
         if (lower === "f" || e.key === "0") { e.preventDefault(); frameAll(); return; }
@@ -694,7 +729,7 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
         if (e.key === '\\') {
             injectExampleShapes();
         }
-    }, [tool, wallPoly, controller, setTool, zoomCenter, frameAll, spaceHeld, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, injectExampleShapes]);
+    }, [tool, wallPoly, controller, setTool, zoomCenter, frameAll, spaceHeld, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, showContours, setShowContours, guideOpen, setGuideOpen, injectExampleShapes]);
 
     const handleKeyUp = useCallback((e: KeyboardEvent) => {
         if (e.code === "Space") {
@@ -726,6 +761,28 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
     // Live height readout shown while a point is selected
 
     const selectedZ = controller.getFirstSelectedHeight();
+
+    // Contour colour ramp (cool → warm by height).
+    const contourHeightBounds = (() => {
+        if (controller.contours.length === 0) return { min: 0, max: 1 };
+        let min = Infinity;
+        let max = -Infinity;
+        for (const c of controller.contours) {
+            if (c.height < min) min = c.height;
+            if (c.height > max) max = c.height;
+        }
+        if (!isFinite(min) || !isFinite(max) || min === max) {
+            return { min: min, max: min + 1 };
+        }
+        return { min, max };
+    })();
+
+    const colorForHeight = (h: number): string => {
+        const { min, max } = contourHeightBounds;
+        const t = Math.max(0, Math.min(1, (h - min) / (max - min)));
+        const hue = 220 - 220 * t;
+        return `hsl(${hue.toFixed(0)}, 55%, 45%)`;
+    };
 
     useEffect(() => {
         if (!onActiveHeightChange) return;
@@ -807,6 +864,23 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                     showMajor={showMajorGrid}
                 />
 
+                {showContours && controller.contours.length > 0 && (
+                    <Layer listening={false}>
+                        {controller.contours.map((cl, idx) => (
+                            <Line
+                                key={`contour-${idx}`}
+                                points={cl.points}
+                                stroke={colorForHeight(cl.height)}
+                                strokeWidth={1.25}
+                                strokeScaleEnabled={false}
+                                lineCap="round"
+                                lineJoin="round"
+                                opacity={0.85}
+                            />
+                        ))}
+                    </Layer>
+                )}
+
                 <Layer>
                     {controller.getShapesAsShapeData().map((shape, index) => {
                         if (!shape) return null;
@@ -860,6 +934,14 @@ function FloorLevelSurvey({ tool, setTool, getContourSpacing, getPointHeight, so
                         onChange={e => setShowMajorGrid(e.target.checked)}
                     />
                     <span>Show major grid</span>
+                </label>
+                <label className="fls-view-toggle">
+                    <input
+                        type="checkbox"
+                        checked={showContours}
+                        onChange={e => setShowContours(e.target.checked)}
+                    />
+                    <span>Show contours</span>
                 </label>
             </div>
 
