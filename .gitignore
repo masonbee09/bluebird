@@ -287,3 +287,8 @@ $RECYCLE.BIN/
 backend/api.log
 backend/*.log
 backend/__pycache__/
+
+
+# Python bytecode cache
+**/__pycache__/
+*.pyc
