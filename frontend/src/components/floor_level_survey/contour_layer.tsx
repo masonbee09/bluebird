@@ -23,6 +23,9 @@ export interface ContourData {
     heights: number[];
     lines: ContourLinesAtHeight[];
     fills?: ContourBand[];
+    Xi?: number[][];
+    Yi?: number[][];
+    Zi?: number[][];
 }
 
 

@@ -32,8 +32,8 @@ class Communicator {
                 maxY = Math.max(maxY, shape.y + shape.radius);
             } else if (shape.type === "wall") {
                 for (let i = 0; i < shape.points.length; i += 2) {
-                    let x = shape.points[i];
-                    let y = shape.points[i + 1];
+                    const x = shape.points[i];
+                    const y = shape.points[i + 1];
                     minX = Math.min(minX, x);
                     minY = Math.min(minY, y);
                     maxX = Math.max(maxX, x);
@@ -51,7 +51,7 @@ class Communicator {
         } else {
             console.log("No duplicate points detected.");
         }
-        let points: { x: number; y: number; z: number }[] = [];
+        const points: { x: number; y: number; z: number }[] = [];
 
         this.parent.shapes.forEach((shape) => {
             if (shape.type === "point") {
@@ -63,10 +63,10 @@ class Communicator {
     }
 
     checkForDuplicatePoints() {
-        let pointSet = new Set<string>();
-        for (let shape of this.parent.shapes) {
+        const pointSet = new Set<string>();
+        for (const shape of this.parent.shapes) {
             if (shape.type === "point") {
-                let key = `${shape.x},${shape.y}`;
+                const key = `${shape.x},${shape.y}`;
                 if (pointSet.has(key)) {
                     return true; // Duplicate found
                 }
@@ -80,8 +80,6 @@ class Communicator {
         let minz: number = Infinity;
         let maxz: number = -Infinity;
 
-        //find the minimum and maximum z among the points
-
         this.parent.shapes.forEach((shape) => {
             if (shape.type === "point") {
                 minz = Math.min(minz, shape.z);
@@ -89,9 +87,8 @@ class Communicator {
             }
         });
 
-        //use the min and max z to create contour heights
-        let heights: number[] = [];
-        let step = this.parent.getContourSpacing();
+        const heights: number[] = [];
+        const step = this.parent.getContourSpacing();
         for (let h = minz - step * .5; h <= maxz + step * .5; h += step) {
             heights.push(h);
         }
@@ -126,25 +123,19 @@ class Communicator {
         };
     }
 
-
     async fetchContours() {
-        let data = this.createJsonData();
+        const data = this.createJsonData();
         const response = await fetch(url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json', // Required for the server to recognize JSON
-                'Accept': 'application/json'        // Optional: Tells the server you expect JSON back
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
-            body: JSON.stringify(data)            // Convert your object to a JSON string
+            body: JSON.stringify(data)
         });
-
-        // 3. Check if the request was successful
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        // 4. Parse the JSON response
-        // Note: response.json() returns 'Promise<any>', so cast it to your interface
         const result = await response.json();
         return result;
     }

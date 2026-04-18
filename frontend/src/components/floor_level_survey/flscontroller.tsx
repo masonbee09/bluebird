@@ -28,7 +28,6 @@ class FLSController {
     private history: string[] = [];
     private future: string[] = [];
     private lastNudgeAt: number = 0;
-    private lastHeightAdjustAt: number = 0;
 
     constructor(OnUpdate: () => void, getContourSpacing: () => number) {
         this.shapes = [];
@@ -192,67 +191,6 @@ class FLSController {
             if (shape.type === "label" && tieids.has(shape.tieid)) {
                 shape.x += dx;
                 shape.y += dy;
-            }
-        }
-        this.notify();
-    }
-
-    bumpSelectedHeight(direction: 1 | -1, step: number = 0.1) {
-        const now = Date.now();
-        if (now - this.lastHeightAdjustAt > COALESCE_MS) {
-            this.snapshot();
-        }
-        this.lastHeightAdjustAt = now;
-
-        const delta = direction * step;
-        const tieids = new Map<string, number>();
-        for (const shape of this.shapes) {
-            if (shape.selected && shape.type === "point") {
-                const next = Math.round((shape.z + delta) * 1000) / 1000;
-                shape.z = next;
-                tieids.set(shape.tieid, next);
-            }
-        }
-        for (const shape of this.shapes) {
-            if (shape.type === "label" && tieids.has(shape.tieid)) {
-                const z = tieids.get(shape.tieid)!;
-                shape.z = z;
-                shape.text = z.toFixed(1);
-            }
-        }
-        this.notify();
-    }
-
-    hasSelectedPoint(): boolean {
-        return this.shapes.some(s => s.selected && s.type === "point");
-    }
-
-    adjustSelectedHeights(deltaY: number, coarse: boolean) {
-        const spacing = this.getContourSpacing();
-        const fine = Math.min(Math.max(spacing / 10, 0.01), 1.0);
-        const step = coarse ? spacing : fine;
-        const direction = deltaY < 0 ? 1 : -1;
-        const delta = direction * step;
-
-        const now = Date.now();
-        if (now - this.lastHeightAdjustAt > COALESCE_MS) {
-            this.snapshot();
-        }
-        this.lastHeightAdjustAt = now;
-
-        const tieids = new Map<string, number>();
-        for (const shape of this.shapes) {
-            if (shape.selected && shape.type === "point") {
-                const next = Math.round((shape.z + delta) * 1000) / 1000;
-                shape.z = next;
-                tieids.set(shape.tieid, next);
-            }
-        }
-        for (const shape of this.shapes) {
-            if (shape.type === "label" && tieids.has(shape.tieid)) {
-                const z = tieids.get(shape.tieid)!;
-                shape.z = z;
-                shape.text = z.toFixed(1);
             }
         }
         this.notify();
@@ -492,7 +430,6 @@ class FLSController {
         }
         this.notify();
     }
-
 
     solveContours = async () => {
         const contourData = await this.communicator.fetchContours();

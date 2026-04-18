@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware # type: ignore
 from models.statics.json import BeamJSON
 from models.statics.beam import BeamInput, CreateBeam
 from core.units.imperial import *
-from models.countouring.json import ContourInput, ContourOutput
+from models.countouring.json import ContourInput
 import logging
 
 app = FastAPI(title="Engineering Platform API")
@@ -48,16 +48,11 @@ def beam_calc(beam: BeamJSON):
     except Exception as e:
         return {"status": "Failure",
                 "Message": str(e)}
-    
+
 
 @app.post("/fls_get_contours")
 def fls_get_contours(fls_input: ContourInput):
-    try:
-        output = fls_input.get_output()
-    except Exception as exc:
-        logging.exception("Failed to compute contour output")
-        return {"status": "Failure", "message": str(exc)}
-
+    output = fls_input.get_output()
     lines = []
     for i in range(len(output.lines)):
         lines.append([])
@@ -65,25 +60,15 @@ def fls_get_contours(fls_input: ContourInput):
             lines[i].append([])
             for k in range(len(output.lines[i][j])):
                 lines[i][j].append({
-                    "x": float(output.lines[i][j][k][0]),
-                    "y": float(output.lines[i][j][k][1]),
+                    "x": output.lines[i][j][k][0],
+                    "y": output.lines[i][j][k][1],
                 })
-
-    fills_payload = []
-    for band in (output.fills or []):
-        polygons = []
-        for poly in band.polygons:
-            rings = [[{"x": float(p[0]), "y": float(p[1])} for p in ring] for ring in poly.rings]
-            polygons.append({"rings": rings})
-        fills_payload.append({
-            "lo": band.lo,
-            "hi": band.hi,
-            "polygons": polygons,
-        })
 
     return {
         "status": "Okay",
         "heights": output.input.heights,
         "lines": lines,
-        "fills": fills_payload,
+        "Xi": output.Xi,
+        "Yi": output.Yi,
+        "Zi": output.Zi,
     }
