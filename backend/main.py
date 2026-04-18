@@ -1,10 +1,12 @@
 from fastapi import FastAPI # type: ignore
 from fastapi.middleware.cors import CORSMiddleware # type: ignore
+from fastapi.responses import JSONResponse # type: ignore
 from models.statics.json import BeamJSON
 from models.statics.beam import BeamInput, CreateBeam
 from core.units.imperial import *
 from models.countouring.json import ContourInput, ContourOutput
 import logging
+import traceback
 
 app = FastAPI(title="Engineering Platform API")
 
@@ -52,24 +54,42 @@ def beam_calc(beam: BeamJSON):
 
 @app.post("/fls_get_contours")
 def fls_get_contours(fls_input: ContourInput):
-    output = fls_input.get_output()
-    # logging.info(output)
-    lines = []
-    # for l1 in output.lines:
-    #     lines.append([])
-    #     for l2 in l1:
-    #         l1.append([])
-    #         for p in l2:
-    #             l2.append({"x": p[0], "y": p[1]})
-    for i in range(len(output.lines)):
-        lines.append([])
-        for j in range(len(output.lines[i])):
-            lines[i].append([])
-            for k in range(len(output.lines[i][j])):
-                lines[i][j].append({"x": output.lines[i][j][k][0], "y": output.lines[i][j][k][1]})
-    return {"status": "Okay",
+    try:
+        output = fls_input.get_output()
+        lines = []
+        for i in range(len(output.lines)):
+            lines.append([])
+            for j in range(len(output.lines[i])):
+                lines[i].append([])
+                for k in range(len(output.lines[i][j])):
+                    # Cast to plain float to avoid any numpy types leaking into
+                    # the JSON encoder.
+                    lines[i][j].append({
+                        "x": float(output.lines[i][j][k][0]),
+                        "y": float(output.lines[i][j][k][1]),
+                    })
+        return {
+            "status": "Okay",
             "heights": output.input.heights,
             "lines": lines,
             "Xi": output.Xi,
             "Yi": output.Yi,
-            "Zi": output.Zi,}
+            "Zi": output.Zi,
+        }
+    except Exception as exc:
+        # Log the full traceback so `api.log` captures the real cause instead
+        # of leaving only "net::ERR_FAILED 500" on the client.
+        logging.exception("fls_get_contours failed")
+        # Return a real response (not a raised HTTPException or bare 500) so
+        # Starlette's CORSMiddleware still attaches the Access-Control-Allow-
+        # Origin header — otherwise the browser reports a CORS error on top of
+        # the 500, hiding the actual server-side failure.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "Failure",
+                "message": str(exc),
+                "type": type(exc).__name__,
+                "traceback": traceback.format_exc(),
+            },
+        )
