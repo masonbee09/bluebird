@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any
+from typing import List, Optional
 import math
 from models.countouring.contourmap import *
 
@@ -35,12 +35,24 @@ class ContourInput(BaseModel):
         return GetOutputFromInput(self)
 
 
+class ContourBandPolygon(BaseModel):
+    """One filled polygon for a contour band. First ring is outer; remaining rings are holes."""
+    rings: List[List[List[float]]]
+
+
+class ContourBand(BaseModel):
+    lo: float
+    hi: float
+    polygons: List[ContourBandPolygon]
+
+
 class ContourOutput(BaseModel):
     input: ContourInput
     lines: List
     Xi: List[List[float]] = []
     Yi: List[List[float]] = []
     Zi: List[List[Optional[float]]] = []
+    fills: Optional[List[ContourBand]] = None
 
 
 def CreateContourInput(bounds: List[float], points: List[PointInput], heights: List[float], resolution: int = 150, walls: Optional[List[WallInput]] = None):
@@ -84,10 +96,24 @@ def GetOutputFromInput(input: ContourInput):
         for row in Zi.tolist()
     ]
 
+    fills_raw = contour_map.filled_bands(input.heights)
+    fills: List[ContourBand] = []
+    for band in fills_raw:
+        polygons = []
+        for poly in band["polygons"]:
+            rings = [[[float(x), float(y)] for (x, y) in ring] for ring in poly]
+            polygons.append(ContourBandPolygon.model_validate({"rings": rings}))
+        fills.append(ContourBand.model_validate({
+            "lo": band["lo"],
+            "hi": band["hi"],
+            "polygons": polygons,
+        }))
+
     return ContourOutput.model_validate({
         "input": input,
         "lines": lines,
         "Xi": Xi_list,
         "Yi": Yi_list,
         "Zi": Zi_list,
+        "fills": fills,
     })

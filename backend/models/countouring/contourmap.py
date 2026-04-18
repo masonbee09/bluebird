@@ -141,20 +141,17 @@ class ContourMap(BaseModel):
                 Zi = np.full(Xi.shape, np.nan)
 
         # When a wall polygon is present we fill all NaN cells with nearest-
-        # neighbour values so the interpolated field is defined everywhere
-        # inside the wall. This allows contour lines to extend past the convex
-        # hull of the sample points. We then explicitly mask out cells that
-        # lie outside the wall polygon so the fill / Zi surface stops exactly
-        # at the wall boundary. Without walls we leave NaN in place so
-        # contours stop at the data hull (existing behaviour).
+        # neighbour values so the interpolated field is defined everywhere on
+        # the grid. This allows contour lines to extend past the convex hull of
+        # the sample points. We then rely on the shapely intersection below to
+        # trim contours exactly at the wall boundary. Without walls we leave
+        # NaN in place so contours stop at the data hull (existing behaviour).
         if clip_geom is not None and len(self.xs) > 0:
             nan_mask = np.isnan(Zi)
             if np.any(nan_mask):
                 nearest = NearestNDInterpolator(pts, zs)
                 fill_vals = nearest(Xi[nan_mask], Yi[nan_mask])
                 Zi[nan_mask] = fill_vals
-            inside_mask = _polygon_mask(clip_geom, Xi, Yi)
-            Zi[~inside_mask] = np.nan
 
         self._clip_geom_cached = clip_geom
         return (Xi, Yi, Zi)

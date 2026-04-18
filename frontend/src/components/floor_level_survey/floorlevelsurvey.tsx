@@ -22,6 +22,7 @@ export interface FLSApi {
     loadShapes: (shapes: Shape[]) => void;
     getStageDataURL: (pixelRatio?: number) => string | null;
     getStageSize: () => { width: number; height: number };
+    /** Min/max Z for the contour legend (from last solve); null if contours are not available. */
     getLegendRange: () => { minZ: number; maxZ: number } | null;
 }
 
@@ -93,7 +94,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
     useEffect(() => {
         if (solveTrigger === undefined || solveTrigger === 0) return;
         let cancelled = false;
-        (async () => {
+            (async () => {
             try {
                 const data = await controller.solveContours();
                 if (cancelled) return;
@@ -102,7 +103,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 console.error("Failed to solve contours:", err);
                 if (!cancelled) setContourData(null);
             }
-        })();
+            })();
         return () => { cancelled = true; };
     }, [solveTrigger, controller]);
 
@@ -288,8 +289,8 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     stage.container().style.cursor = "grabbing";
                 }
                 break;
-            }
         }
+    }
     };
 
     const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
