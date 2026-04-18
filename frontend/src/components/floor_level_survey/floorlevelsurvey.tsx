@@ -13,7 +13,6 @@ import ContextMenu, { type ContextMenuItem } from "./context_menu";
 import { UndoIcon, RedoIcon } from "./tool_icons";
 import { snapToGrid } from "./grid_constants";
 import ContourLayer, { type ContourData } from "./contour_layer";
-import ContourLegend from "./contour_legend";
 import "./floorlevelsurvey.css";
 
 
@@ -696,15 +695,6 @@ function FloorLevelSurvey({
                 </Layer>
             </Stage>
 
-            {contourData && contourData.heights?.length > 0 && (
-                <ContourLegend
-                    startColor={contourStartColor}
-                    endColor={contourEndColor}
-                    minZ={Math.min(...contourData.heights)}
-                    maxZ={Math.max(...contourData.heights)}
-                />
-            )}
-
             {selectedZ !== null && pointerScreen && (
                 <div
                     className="fls-height-readout"
@@ -730,21 +720,6 @@ function FloorLevelSurvey({
                         onChange={e => setShowMajorGrid(e.target.checked)}
                     />
                     <span>Show major grid</span>
-                </label>
-                <label className="fls-view-switch" title="Toggle contour color fill">
-                    <span className="fls-view-switch-label">Color fill</span>
-                    <span
-                        className={`fls-view-switch-track${contourFill ? " is-on" : ""}`}
-                        aria-hidden="true">
-                        <input
-                            type="checkbox"
-                            className="fls-view-switch-input"
-                            checked={contourFill}
-                            onChange={e => setContourFill(e.target.checked)}
-                            aria-label="Toggle contour color fill"
-                        />
-                        <span className="fls-view-switch-thumb" />
-                    </span>
                 </label>
             </div>
 
