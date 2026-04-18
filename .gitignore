@@ -1,0 +1,51 @@
+# --- Logs (do not commit) ---
+*.log
+logs/
+*.log.*
+
+# --- Dependencies & builds ---
+node_modules/
+dist/
+dist-ssr/
+build/
+*.egg-info/
+.eggs/
+*.egg
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+.env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- IDE & OS ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- Misc caches ---
+.cache/
+*.tsbuildinfo
