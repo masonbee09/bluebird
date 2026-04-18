@@ -8,13 +8,13 @@ import logging
 
 app = FastAPI(title="Engineering Platform API")
 
-LOG_FILE = "api.log"
 logging_level = logging.INFO
 
-# Configure the root logger
-logging.basicConfig(level=logging_level,
-                    format='[%(asctime)s.%(msecs)03d] %(levelname)s [%(thread)d] - %(message)s',
-                    handlers=[logging.FileHandler(LOG_FILE)])
+# Configure the root logger (stdout/stderr only; no log file)
+logging.basicConfig(
+    level=logging_level,
+    format="[%(asctime)s.%(msecs)03d] %(levelname)s [%(thread)d] - %(message)s",
+)
 
 origins = [
     "http://localhost:5173",  # React default port
