@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any
+import math
 from models.countouring.contourmap import *
 
 
@@ -34,21 +35,12 @@ class ContourInput(BaseModel):
         return GetOutputFromInput(self)
 
 
-class ContourBandPolygon(BaseModel):
-    """One filled polygon for a contour band. First ring is the outer boundary; remaining rings are holes."""
-    rings: List[List[List[float]]]
-
-
-class ContourBand(BaseModel):
-    lo: float
-    hi: float
-    polygons: List[ContourBandPolygon]
-
-
 class ContourOutput(BaseModel):
     input: ContourInput
     lines: List
-    fills: Optional[List[ContourBand]] = None
+    Xi: List[List[float]] = []
+    Yi: List[List[float]] = []
+    Zi: List[List[Optional[float]]] = []
 
 
 def CreateContourInput(bounds: List[float], points: List[PointInput], heights: List[float], resolution: int = 150, walls: Optional[List[WallInput]] = None):
@@ -83,21 +75,19 @@ def GetOutputFromInput(input: ContourInput):
     for h in input.heights:
         lines.append(contour_map.lines_at_height(h))
 
-    fills_raw = contour_map.filled_bands(input.heights)
-    fills = []
-    for band in fills_raw:
-        polygons = []
-        for poly in band["polygons"]:
-            rings = [[[float(x), float(y)] for (x, y) in ring] for ring in poly]
-            polygons.append(ContourBandPolygon.model_validate({"rings": rings}))
-        fills.append(ContourBand.model_validate({
-            "lo": band["lo"],
-            "hi": band["hi"],
-            "polygons": polygons,
-        }))
+    Xi, Yi, Zi = contour_map.interpolated
+    Xi_list = [[float(v) for v in row] for row in Xi.tolist()]
+    Yi_list = [[float(v) for v in row] for row in Yi.tolist()]
+    # NaN is not valid JSON, so replace NaN with None for serialization.
+    Zi_list = [
+        [None if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v) for v in row]
+        for row in Zi.tolist()
+    ]
 
     return ContourOutput.model_validate({
         "input": input,
         "lines": lines,
-        "fills": fills,
+        "Xi": Xi_list,
+        "Yi": Yi_list,
+        "Zi": Zi_list,
     })

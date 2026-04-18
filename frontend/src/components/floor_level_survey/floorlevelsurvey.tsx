@@ -22,6 +22,7 @@ export interface FLSApi {
     loadShapes: (shapes: Shape[]) => void;
     getStageDataURL: (pixelRatio?: number) => string | null;
     getStageSize: () => { width: number; height: number };
+    getLegendRange: () => { minZ: number; maxZ: number } | null;
 }
 
 
@@ -774,11 +775,20 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 width: stageDimensions.width,
                 height: stageDimensions.height,
             }),
+            getLegendRange: () => {
+                if (contourData && Array.isArray(contourData.heights) && contourData.heights.length > 0) {
+                    const hs = contourData.heights;
+                    const lo = Math.min(...hs);
+                    const hi = Math.max(...hs);
+                    if (isFinite(lo) && isFinite(hi) && hi > lo) return { minZ: lo, maxZ: hi };
+                }
+                return null;
+            },
         };
         return () => {
             if (apiRef) apiRef.current = null;
         };
-    }, [apiRef, controller, stageDimensions.width, stageDimensions.height]);
+    }, [apiRef, controller, contourData, stageDimensions.width, stageDimensions.height]);
 
 
     // Render

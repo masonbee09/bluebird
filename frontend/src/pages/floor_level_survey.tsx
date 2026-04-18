@@ -147,6 +147,7 @@ function FloorLevelSurveyPage() {
                 stageHeight: height,
                 shapes: api.getShapes(),
                 settings: currentSettings(),
+                legendRange: api.getLegendRange(),
             });
         } catch (err) {
             console.error(err);
