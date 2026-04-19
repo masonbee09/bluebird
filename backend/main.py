@@ -16,17 +16,22 @@ logging.basicConfig(
     format="[%(asctime)s.%(msecs)03d] %(levelname)s [%(thread)d] - %(message)s",
 )
 
+# Local dev: Vite (any port) on localhost / 127.0.0.1. Regex covers 5173, 5174, etc.
+# Frontend can also call via Vite proxy (same origin) to avoid CORS entirely.
 origins = [
-    "http://localhost:5173",  # React default port
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

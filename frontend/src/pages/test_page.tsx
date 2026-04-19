@@ -27,36 +27,36 @@ function TestPage() {
         return (new PointTool).create(sx, sy, 3)
     }
 
-    let xs1 = [];
-    let ys1 = [];
-    let ys2 = [];
-    let ys3 = [];
+    const xs1 = [];
+    const ys1 = [];
+    const ys2 = [];
+    const ys3 = [];
     for (let i = -10; i < 91; i++) {
         xs1.push(i);
         ys1.push(Math.cos(i * Math.PI / 30) * 5)
         ys2.push(Math.sin(i * Math.PI / 30) * 4)
         ys3.push((100 * Math.pow(i, 2) - Math.pow(i, 3)) * 5 / 148148)
     }
-    let line1 = new LineGraphLine(xs1, ys1, "white", 5)
-    let line2 = new LineGraphLine(xs1, ys2, "blue", 5)
-    let line3 = new LineGraphLine(xs1, ys3, "red", 5)
+    const line1 = new LineGraphLine(xs1, ys1, "white", 5)
+    const line2 = new LineGraphLine(xs1, ys2, "blue", 5)
+    const line3 = new LineGraphLine(xs1, ys3, "red", 5)
     const lines = useMemo(() => {
         return [line3, line2, line1]
     }, [line1, line2])
 
 
 
-    let L = 10
-    let W = -10
-    let lxs = []
-    let Vs = []
-    let Ms = []
-    let Cs = []
-    let Ds = []
-    let resolution = 500
-    let xspacing = L / (resolution - 1)
-    let A = -W * L / 2
-    let c_c = W * Math.pow(L, 3) / 24
+    const L = 10
+    const W = -10
+    const lxs = []
+    const Vs = []
+    const Ms = []
+    const Cs = []
+    const Ds = []
+    const resolution = 500
+    const xspacing = L / (resolution - 1)
+    const A = -W * L / 2
+    const c_c = W * Math.pow(L, 3) / 24
 
     for (let i = 0; i < L + xspacing; i += xspacing) {
         lxs.push(i);

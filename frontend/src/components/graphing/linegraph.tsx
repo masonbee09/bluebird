@@ -54,14 +54,14 @@ export default function LineGraph({ lines, minx = null, maxx = null, miny = null
         };
     }, []);
 
-    let bounds = getBoundsMultiple(lines)
+    const bounds = getBoundsMultiple(lines)
     if (minx !== null) { bounds[0] = minx }
     if (maxx !== null) { bounds[1] = maxx }
     if (miny !== null) { bounds[2] = miny }
     if (maxy !== null) { bounds[3] = maxy }
 
     const newShapes = useMemo(() => {
-        let s = []
+        const s = []
         let w = stageDimensions.width
         let h = stageDimensions.height
         let offset = 0
@@ -71,12 +71,12 @@ export default function LineGraph({ lines, minx = null, maxx = null, miny = null
             offset = margin
         }
         for (let i = 0; i < lines.length; i++) {
-            let line = lines[i]
-            let points = []
+            const line = lines[i]
+            const points = []
             for (let j = 0; j < line.xs.length; j++) {
 
-                let newx = (line.xs[j] - bounds[0]) / (bounds[1] - bounds[0]) * w + offset
-                let newy = (1 - (line.ys[j] - bounds[2]) / (bounds[3] - bounds[2])) * h + offset
+                const newx = (line.xs[j] - bounds[0]) / (bounds[1] - bounds[0]) * w + offset
+                const newy = (1 - (line.ys[j] - bounds[2]) / (bounds[3] - bounds[2])) * h + offset
 
                 points.push(newx)
                 points.push(newy)
@@ -84,13 +84,13 @@ export default function LineGraph({ lines, minx = null, maxx = null, miny = null
             s.push((new LineTool).create(points, line.color, line.linewidth))
         }
 
-        let xAxisLoc = (1 - (Math.max(Math.min(0, bounds[3]), bounds[2]) - bounds[2]) / (bounds[3] - bounds[2])) * h + offset
-        let yAxisLoc = (0 - bounds[0]) / (bounds[1] - bounds[0]) * w + offset
+        const xAxisLoc = (1 - (Math.max(Math.min(0, bounds[3]), bounds[2]) - bounds[2]) / (bounds[3] - bounds[2])) * h + offset
+        const yAxisLoc = (0 - bounds[0]) / (bounds[1] - bounds[0]) * w + offset
 
-        let horiAxis = [offset, xAxisLoc, w + offset, xAxisLoc]
+        const horiAxis = [offset, xAxisLoc, w + offset, xAxisLoc]
         s.push((new LineTool).create(horiAxis, "white", axisWidth))
 
-        let vertAxis = [yAxisLoc, offset, yAxisLoc, h + offset]
+        const vertAxis = [yAxisLoc, offset, yAxisLoc, h + offset]
         s.push((new LineTool).create(vertAxis, "white", axisWidth))
 
         if (xTickSpacing == null) {
@@ -100,8 +100,8 @@ export default function LineGraph({ lines, minx = null, maxx = null, miny = null
             yTickSpacing = (bounds[3] - bounds[2]) / 10
         }
 
-        let xCount = Math.floor((bounds[1] - bounds[0]) / xTickSpacing)
-        let yCount = Math.floor((bounds[3] - bounds[2]) / yTickSpacing)
+        const xCount = Math.floor((bounds[1] - bounds[0]) / xTickSpacing)
+        const yCount = Math.floor((bounds[3] - bounds[2]) / yTickSpacing)
 
         for (let i = 0; i < xCount; i++) {
             s.push((new LineTool).create([i / xCount * w + offset, xAxisLoc + tickLength, i / xCount * w + offset, xAxisLoc], "white", axisWidth))
@@ -142,14 +142,14 @@ export default function LineGraph({ lines, minx = null, maxx = null, miny = null
 
 
 function getBoundsMultiple(lines: LineGraphLine[]) {
-    let bounds1 = lines[0].getBounds();
+    const bounds1 = lines[0].getBounds();
     let xmin = bounds1[0];
     let xmax = bounds1[1];
     let ymin = bounds1[2];
     let ymax = bounds1[3];
 
     for (let i = 0; i < lines.length; i++) {
-        let temp = lines[i].getBounds();
+        const temp = lines[i].getBounds();
         if (temp[0] < xmin) { xmin = temp[0] };
         if (temp[1] > xmax) { xmax = temp[1] };
         if (temp[2] < ymin) { ymin = temp[2] };
