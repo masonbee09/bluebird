@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
-import math
+from typing import List
 from models.countouring.contourmap import *
+import logging
+from models.countouring.contour_polygons import get_polygon_from_line, get_intersect_polygon
 
 
 class PointInput(BaseModel):
@@ -9,61 +10,41 @@ class PointInput(BaseModel):
     y: float
     z: float
 
-
-class WallInput(BaseModel):
-    """A wall is represented as a single straight segment between two points."""
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-
-
 class ContourInput(BaseModel):
-    bounds: List[float] = Field(min_length=4, max_length=4, description="[0]=xMin, [1]=yMin, [2]=xMax, [3]=yMax")
+    bounds: List[float] = Field(min_length=4, max_length=4, description="[0] = xMin, [1] = xMax, [2] = yMin, [3] = yMax")
     points: List[PointInput]
-    walls: List[WallInput] = []
     heights: List[float]
-    resolution: int = 150
+    resolution: int = 50
 
     def get_xyzlist(self):
         return [[p.x for p in self.points], [p.y for p in self.points], [p.z for p in self.points]]
-
-    def get_wall_segments(self):
-        return [((w.x1, w.y1), (w.x2, w.y2)) for w in self.walls]
-
+    
     def get_output(self):
         return GetOutputFromInput(self)
-
-
-class ContourBandPolygon(BaseModel):
-    """One filled polygon for a contour band. First ring is outer; remaining rings are holes."""
-    rings: List[List[List[float]]]
-
-
-class ContourBand(BaseModel):
-    lo: float
-    hi: float
-    polygons: List[ContourBandPolygon]
-
 
 class ContourOutput(BaseModel):
     input: ContourInput
     lines: List
-    Xi: List[List[float]] = []
-    Yi: List[List[float]] = []
-    Zi: List[List[Optional[float]]] = []
-    fills: Optional[List[ContourBand]] = None
 
 
-def CreateContourInput(bounds: List[float], points: List[PointInput], heights: List[float], resolution: int = 150, walls: Optional[List[WallInput]] = None):
-    return ContourInput.model_validate({
-        "bounds": bounds,
-        "points": points,
-        "walls": walls or [],
-        "heights": heights,
-        "resolution": resolution,
-    })
+class ContourPolygonInput(BaseModel):
+    bounds: List[float] = Field(min_length=4, max_length=4, description="[0] = xMin, [1] = xMax, [2] = yMin, [3] = yMax")
+    points: List[PointInput]
+    wall_points: List[PointInput]
+    heights: List[float]
+    resolution: int = 50
 
+    def get_output(self):
+        return GetPolygonOutputFromInput(self)
+
+class ContourPolygonOutput(BaseModel):
+    input: ContourPolygonInput
+    polygons: List
+    heights: List
+
+
+def CreateContourInput(bounds: List[float], points: List[PointInput], heights: List[float], resolution:int = 50):
+    return ContourInput.model_validate({"bounds": bounds, "points": points, "heights": heights, "resolution": resolution})
 
 def CreatePointInputs(xyzlist):
     if len(xyzlist[0]) != 3:
@@ -74,46 +55,85 @@ def CreatePointInputs(xyzlist):
     return pointlist
 
 
+def GetContourOutput(bounds: List[float], xyzlist: List, heights: List[float], resolution = 50):
+    if len(xyzlist[0]) != 3:
+        raise Exception("xyzlist must be in form [[x1, y1, z1], [x2, y2, z2], ...]")
+    points = CreatePointInputs(xyzlist)
+    input = CreateContourInput(bounds, points, heights, resolution)
+    map = CreateContourMap([p.x for p in points], [p.y for p in points], [p.z for p in points], bounds, resolution)
+    lines = []
+    for h in heights:
+        lines.append(map.lines_at_height(h))
+    output = ContourOutput.model_validate({"input": input, "lines": lines})
+    return output
+
+
 def GetOutputFromInput(input: ContourInput):
-    contour_map = CreateContourMap(
-        [p.x for p in input.points],
-        [p.y for p in input.points],
-        [p.z for p in input.points],
-        input.bounds,
-        resolution=input.resolution,
-        wall_segments=input.get_wall_segments(),
-    )
+    map = CreateContourMap([p.x for p in input.points], 
+                           [p.y for p in input.points], 
+                           [p.z for p in input.points], 
+                           input.bounds)
+    # logging.info("Created contour map for bounds: " + str(input.bounds))
+    # logging.info("Number of points: " + str(len(input.points)))
+    # logging.info(map.xs)
+    # logging.info(map.ys)
+    # logging.info(map.zs)
     lines = []
     for h in input.heights:
-        lines.append(contour_map.lines_at_height(h))
+        # logging.info("Calculating lines at height: " + str(h))
+        lines.append(map.lines_at_height(h))
+        # logging.info(map.lines_at_height(h))
+    # logging.info(lines)
+    # interp = map.interpolated
+    # Xi = interp[0].tolist()
+    # Yi = interp[1].tolist()
+    # Zi = interp[2].tolist()
+    # logging.info("lines")
+    # logging.info(lines)
+    # logging.info("Xi")
+    # logging.info(Xi)
+    return ContourOutput.model_validate({"input": input, "lines": lines})
 
-    Xi, Yi, Zi = contour_map.interpolated
-    Xi_list = [[float(v) for v in row] for row in Xi.tolist()]
-    Yi_list = [[float(v) for v in row] for row in Yi.tolist()]
-    # NaN is not valid JSON, so replace NaN with None for serialization.
-    Zi_list = [
-        [None if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v) for v in row]
-        for row in Zi.tolist()
-    ]
+def GetPolygonOutputFromInput(input: ContourPolygonInput):
+    map = CreateContourMap([p.x for p in input.points], 
+                           [p.y for p in input.points], 
+                           [p.z for p in input.points], 
+                           input.bounds)
+    lines = []
+    for h in input.heights:
+        lines.append(map.lines_at_height(h))
+    # interp = map.interpolated
+    # Xi = interp[0].tolist()
+    # Yi = interp[1].tolist()
+    # Zi = interp[2].tolist()
 
-    fills_raw = contour_map.filled_bands(input.heights)
-    fills: List[ContourBand] = []
-    for band in fills_raw:
-        polygons = []
-        for poly in band["polygons"]:
-            rings = [[[float(x), float(y)] for (x, y) in ring] for ring in poly]
-            polygons.append(ContourBandPolygon.model_validate({"rings": rings}))
-        fills.append(ContourBand.model_validate({
-            "lo": band["lo"],
-            "hi": band["hi"],
-            "polygons": polygons,
-        }))
+    print(input.points)
 
-    return ContourOutput.model_validate({
-        "input": input,
-        "lines": lines,
-        "Xi": Xi_list,
-        "Yi": Yi_list,
-        "Zi": Zi_list,
-        "fills": fills,
-    })
+    closed_list = []
+
+    height_list_1 = []
+
+    for i in range(len(lines)):
+        for j in range(len(lines[i])):
+            xs = [p[0] for p in lines[i][j]]
+            ys = [p[1] for p in lines[i][j]]
+
+            points = list(zip(xs, ys))
+            closed_points = get_polygon_from_line(points, input.bounds[0], input.bounds[1], input.bounds[2], input.bounds[3])
+
+            closed_list.append(closed_points)
+            height_list_1.append(input.heights[i])
+
+    wallxs = [p.x for p in input.wall_points]
+    wallys = [p.y for p in input.wall_points]
+
+    height_list_2 = []
+    intersect_lines = []
+    for i in range(len(closed_list)):
+        intersect_xs, intersect_ys = get_intersect_polygon(list(zip(wallxs, wallys)), closed_list[i])
+        for j in range(len(intersect_xs)):
+            # print((intersect_xs[j], intersect_ys[j]))
+            intersect_lines.append(list(zip(intersect_xs[j], intersect_ys[j])))
+            height_list_2.append(height_list_1[i])
+
+    return ContourPolygonOutput.model_validate({"input": input, "polygons": intersect_lines, "heights": height_list_2})

@@ -1,5 +1,6 @@
 import { Layer, Line, Shape } from "react-konva";
 import { interpolateContourColor } from "./contour_colors";
+import type { GridBandFill } from "./contour_grid_fills";
 
 
 export type ContourPoint = { x: number; y: number } | [number, number];
@@ -32,6 +33,8 @@ export interface ContourData {
 
 interface ContourLayerProps {
     data: ContourData | null;
+    /** Client-side fills from Xi/Yi/Zi grid (when API does not send `fills`). */
+    gridBandFills?: GridBandFill[] | null;
     startColor: string;
     endColor: string;
     lineWidth?: number;
@@ -69,12 +72,13 @@ function ringToFlat(ring: ContourPoint[]): number[] {
 
 function ContourLayer({
     data,
+    gridBandFills = null,
     startColor,
     endColor,
     lineWidth = 1.2,
     minZ = null,
     maxZ = null,
-    fillOpacity = 0.45,
+    fillOpacity = 0.52,
     lineOpacity = 0.95,
     lineTension = 0.5,
     showFill = true,
@@ -92,39 +96,75 @@ function ContourLayer({
         return interpolateContourColor(startColor, endColor, Math.max(0, Math.min(1, t)));
     };
 
+    const apiFills = data.fills ?? [];
+    const useGridFills = (gridBandFills?.length ?? 0) > 0 && apiFills.length === 0;
+
     return (
         <Layer listening={false} opacity={1}>
-            {showFill && (data.fills ?? []).map((band, bi) => {
-                const mid = (band.lo + band.hi) / 2;
-                const color = colorAtHeight(mid);
-                return band.polygons.map((poly, pi) => {
-                    if (!poly.rings || poly.rings.length === 0) return null;
+            {showFill &&
+                useGridFills &&
+                (gridBandFills ?? []).map((band, bi) => {
+                    const mid = (band.lo + band.hi) / 2;
+                    const color = colorAtHeight(mid);
+                    const q = band.flatQuads;
+                    if (q.length < 8) return null;
                     return (
                         <Shape
-                            key={`fill-${bi}-${pi}`}
+                            key={`grid-fill-${bi}`}
                             listening={false}
                             perfectDrawEnabled={false}
                             opacity={fillOpacity}
                             sceneFunc={(ctx) => {
                                 const native = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
                                 native.beginPath();
-                                for (const ring of poly.rings) {
-                                    const flat = ringToFlat(ring);
-                                    if (flat.length < 6) continue;
-                                    native.moveTo(flat[0], flat[1]);
-                                    for (let i = 2; i < flat.length; i += 2) {
-                                        native.lineTo(flat[i], flat[i + 1]);
-                                    }
+                                for (let i = 0; i < q.length; i += 8) {
+                                    native.moveTo(q[i], q[i + 1]);
+                                    native.lineTo(q[i + 2], q[i + 3]);
+                                    native.lineTo(q[i + 4], q[i + 5]);
+                                    native.lineTo(q[i + 6], q[i + 7]);
                                     native.closePath();
                                 }
                                 native.fillStyle = color;
-                                native.fill("evenodd");
+                                native.fill();
                             }}
                             fill={color}
                         />
                     );
-                });
-            })}
+                })}
+
+            {showFill &&
+                !useGridFills &&
+                apiFills.map((band, bi) => {
+                    const mid = (band.lo + band.hi) / 2;
+                    const color = colorAtHeight(mid);
+                    return band.polygons.map((poly, pi) => {
+                        if (!poly.rings || poly.rings.length === 0) return null;
+                        return (
+                            <Shape
+                                key={`fill-${bi}-${pi}`}
+                                listening={false}
+                                perfectDrawEnabled={false}
+                                opacity={fillOpacity}
+                                sceneFunc={(ctx) => {
+                                    const native = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+                                    native.beginPath();
+                                    for (const ring of poly.rings) {
+                                        const flat = ringToFlat(ring);
+                                        if (flat.length < 6) continue;
+                                        native.moveTo(flat[0], flat[1]);
+                                        for (let i = 2; i < flat.length; i += 2) {
+                                            native.lineTo(flat[i], flat[i + 1]);
+                                        }
+                                        native.closePath();
+                                    }
+                                    native.fillStyle = color;
+                                    native.fill("evenodd");
+                                }}
+                                fill={color}
+                            />
+                        );
+                    });
+                })}
 
             {data.lines.map((linesAtH, hi) => {
                 const h = heights[hi];

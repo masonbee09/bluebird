@@ -3,35 +3,30 @@ from fastapi.middleware.cors import CORSMiddleware # type: ignore
 from models.statics.json import BeamJSON
 from models.statics.beam import BeamInput, CreateBeam
 from core.units.imperial import *
-from models.countouring.json import ContourInput, ContourOutput
+from models.countouring.json import ContourInput, ContourOutput, ContourPolygonInput
 import logging
 
 app = FastAPI(title="Engineering Platform API")
 
+LOG_FILE = "api.log"
 logging_level = logging.INFO
 
-# Configure the root logger (stdout/stderr only; no log file)
-logging.basicConfig(
-    level=logging_level,
-    format="[%(asctime)s.%(msecs)03d] %(levelname)s [%(thread)d] - %(message)s",
-)
+# Configure the root logger
+logging.basicConfig(level=logging_level,
+                    format='[%(asctime)s.%(msecs)03d] %(levelname)s [%(thread)d] - %(message)s',
+                    handlers=[logging.FileHandler(LOG_FILE)])
 
-# Local dev: Vite (any port) on localhost / 127.0.0.1. Regex covers 5173, 5174, etc.
-# Frontend can also call via Vite proxy (same origin) to avoid CORS entirely.
 origins = [
-    "http://localhost:5173",
+    "http://localhost:5173",  # React default port
     "http://127.0.0.1:5173",
-    "http://localhost:4173",
-    "http://127.0.0.1:4173",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers
 )
 
 
@@ -72,21 +67,23 @@ def fls_get_contours(fls_input: ContourInput):
             lines[i].append([])
             for k in range(len(output.lines[i][j])):
                 lines[i][j].append({"x": output.lines[i][j][k][0], "y": output.lines[i][j][k][1]})
-    fills_payload = []
-    for band in (output.fills or []):
-        polygons = []
-        for poly in band.polygons:
-            rings = [[{"x": float(p[0]), "y": float(p[1])} for p in ring] for ring in poly.rings]
-            polygons.append({"rings": rings})
-        fills_payload.append({
-            "lo": band.lo,
-            "hi": band.hi,
-            "polygons": polygons,
-        })
     return {"status": "Okay",
             "heights": output.input.heights,
             "lines": lines,
             "Xi": output.Xi,
             "Yi": output.Yi,
-            "Zi": output.Zi,
-            "fills": fills_payload}
+            "Zi": output.Zi,}
+
+
+@app.post("/fls_get_contour_polygons")
+def fls_get_contour_polygons(fls_input: ContourPolygonInput):
+    output = fls_input.get_output()
+    print(output)
+    polygons = []
+    for i in range(len(output.polygons)):
+        polygons.append([])
+        for j in range(len(output.polygons[i])):
+            polygons[i].append({"x": output.polygons[i][j][0], "y": output.polygons[i][j][1]})
+    return {"status": "Okay",
+            "heights": output.heights,
+            "polygons": polygons}

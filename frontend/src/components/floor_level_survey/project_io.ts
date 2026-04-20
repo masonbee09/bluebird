@@ -227,7 +227,8 @@ export function exportCanvasAsPDF(opts: ExportPDFOptions) {
     const pageH = pdf.internal.pageSize.getHeight();
     const margin = 32;
 
-    const legend = resolveLegendRange(legendRange ?? null, shapes);
+    const legend =
+        settings.contourFill ? resolveLegendRange(legendRange ?? null, shapes) : null;
     const legendColWidth = legend ? 72 : 0;
 
     // Header

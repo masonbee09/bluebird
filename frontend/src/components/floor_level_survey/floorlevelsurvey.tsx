@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import type React from "react";
 import { Stage, Layer, Line, Circle, Text } from "react-konva";
 import type Konva from "konva";
@@ -14,6 +14,7 @@ import { UndoIcon, RedoIcon } from "./tool_icons";
 import { snapToGrid } from "./grid_constants";
 import ContourLayer, { type ContourData } from "./contour_layer";
 import ContourLegend from "./contour_legend";
+import { buildGridBandFills, wallRingsFromShapes } from "./contour_grid_fills";
 import "./floorlevelsurvey.css";
 
 
@@ -61,6 +62,21 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
     const lastWallClickRef = useRef<{ t: number; x: number; y: number } | null>(null);
     const [exampleInjected, setExampleInjected] = useState(false);
     const [contourData, setContourData] = useState<ContourData | null>(null);
+
+    const wallLayoutSignature = controller.shapes
+        .filter(s => s.type === "wall" && !s.temporary)
+        .map(s => (s.type === "wall" ? s.points.join(",") : ""))
+        .join("|");
+
+    const gridBandFills = useMemo(() => {
+        const Xi = contourData?.Xi;
+        const Yi = contourData?.Yi;
+        const Zi = contourData?.Zi;
+        const heights = contourData?.heights;
+        if (!Xi?.length || !Yi?.length || !Zi?.length || !heights?.length) return null;
+        const wallRings = wallRingsFromShapes(controller.shapes);
+        return buildGridBandFills({ Xi, Yi, Zi, heights, wallRings });
+    }, [contourData, wallLayoutSignature, controller]);
 
     const [viewport, setViewport] = useState({ scale: 1, x: 0, y: 0 });
     const [spaceHeld, setSpaceHeld] = useState(false);
@@ -867,6 +883,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
 
                 <ContourLayer
                     data={contourData}
+                    gridBandFills={gridBandFills}
                     startColor={contourStartColor}
                     endColor={contourEndColor}
                     showFill={contourFill}

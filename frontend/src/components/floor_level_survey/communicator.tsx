@@ -2,14 +2,7 @@ import FLSController from "./flscontroller"
 
 
 
-/** In dev, Vite proxies `/api/*` → `http://127.0.0.1:8000/*` (see vite.config.ts). Override with VITE_FLS_API_URL for production. */
-function flsContourUrl(): string {
-    const base = import.meta.env.VITE_FLS_API_URL as string | undefined;
-    if (base && base.length > 0) {
-        return `${base.replace(/\/$/, "")}/fls_get_contours`;
-    }
-    return "/api/fls_get_contours";
-}
+const url = "http://127.0.0.1:8000/fls_get_contours"
 
 
 
@@ -136,7 +129,7 @@ class Communicator {
 
     async fetchContours() {
         let data = this.createJsonData();
-        const response = await fetch(flsContourUrl(), {
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json', // Required for the server to recognize JSON

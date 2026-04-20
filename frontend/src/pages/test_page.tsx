@@ -48,11 +48,11 @@ function TestPage() {
 
     const L = 10
     const W = -10
-    const lxs = []
-    const Vs = []
-    const Ms = []
-    const Cs = []
-    const Ds = []
+    const lxs: number[] = [];
+    const Vs: number[] = [];
+    const Ms: number[] = [];
+    const Cs: number[] = [];
+    const Ds: number[] = [];
     const resolution = 500
     const xspacing = L / (resolution - 1)
     const A = -W * L / 2
