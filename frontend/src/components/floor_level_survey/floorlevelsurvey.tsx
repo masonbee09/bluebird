@@ -1,10 +1,10 @@
-import { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import type React from "react";
-import { Stage, Layer, Line, Circle, Text } from "react-konva";
+import { Stage, Layer, Line, Circle, Text, Group } from "react-konva";
 import type Konva from "konva";
 import FLSController from "./flscontroller";
 import { wallStyle, pointStyle, heightLabelStyle } from "./style_presets";
-import type { Tool, Shape } from "./shape_types";
+import type { Tool, Shape, PointShape } from "./shape_types";
 import GridLayer from "./grid_layer";
 import ShortcutGuide from "./shortcut_guide";
 import Minimap from "./minimap";
@@ -14,7 +14,6 @@ import { UndoIcon, RedoIcon } from "./tool_icons";
 import { snapToGrid } from "./grid_constants";
 import ContourLayer, { type ContourData } from "./contour_layer";
 import ContourLegend from "./contour_legend";
-import { buildGridBandFills, wallRingsFromShapes } from "./contour_grid_fills";
 import "./floorlevelsurvey.css";
 
 
@@ -23,8 +22,10 @@ export interface FLSApi {
     loadShapes: (shapes: Shape[]) => void;
     getStageDataURL: (pixelRatio?: number) => string | null;
     getStageSize: () => { width: number; height: number };
-    /** Min/max Z for the contour legend (from last solve); null if contours are not available. */
+    /** Min/max contour level from last solve; null if contours were not computed. */
     getLegendRange: () => { minZ: number; maxZ: number } | null;
+    /** Highest- and lowest-elevation point shapes currently in the scene. */
+    getHighLow: () => { high: PointShape | null; low: PointShape | null; differential: number | null };
 }
 
 
@@ -46,6 +47,8 @@ interface FLSProps {
     contourFill: boolean;
     setContourFill: (v: boolean) => void;
     onActiveHeightChange?: (z: number | null) => void;
+    /** Called whenever the highest/lowest/differential values change. */
+    onHighLowChange?: (high: PointShape | null, low: PointShape | null, differential: number | null) => void;
 }
 
 
@@ -53,7 +56,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange }: FLSProps) {
+function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -62,21 +65,6 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
     const lastWallClickRef = useRef<{ t: number; x: number; y: number } | null>(null);
     const [exampleInjected, setExampleInjected] = useState(false);
     const [contourData, setContourData] = useState<ContourData | null>(null);
-
-    const wallLayoutSignature = controller.shapes
-        .filter(s => s.type === "wall" && !s.temporary)
-        .map(s => (s.type === "wall" ? s.points.join(",") : ""))
-        .join("|");
-
-    const gridBandFills = useMemo(() => {
-        const Xi = contourData?.Xi;
-        const Yi = contourData?.Yi;
-        const Zi = contourData?.Zi;
-        const heights = contourData?.heights;
-        if (!Xi?.length || !Yi?.length || !Zi?.length || !heights?.length) return null;
-        const wallRings = wallRingsFromShapes(controller.shapes);
-        return buildGridBandFills({ Xi, Yi, Zi, heights, wallRings });
-    }, [contourData, wallLayoutSignature, controller]);
 
     const [viewport, setViewport] = useState({ scale: 1, x: 0, y: 0 });
     const [spaceHeld, setSpaceHeld] = useState(false);
@@ -778,6 +766,26 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
         onActiveHeightChange(selectedZ);
     }, [selectedZ, onActiveHeightChange]);
 
+
+    // Compute highest / lowest elevation points from the current scene.
+    const highLow = (() => {
+        let high: PointShape | null = null;
+        let low: PointShape | null = null;
+        for (const s of controller.shapes) {
+            if (s.type !== "point") continue;
+            if (high === null || s.z > high.z) high = s;
+            if (low === null || s.z < low.z) low = s;
+        }
+        const differential = high && low ? high.z - low.z : null;
+        return { high, low, differential };
+    })();
+
+    useEffect(() => {
+        if (!onHighLowChange) return;
+        onHighLowChange(highLow.high, highLow.low, highLow.differential);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [highLow.high?.tieid, highLow.low?.tieid, highLow.high?.z, highLow.low?.z, onHighLowChange]);
+
     useEffect(() => {
         if (!apiRef) return;
         apiRef.current = {
@@ -800,6 +808,17 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     if (isFinite(lo) && isFinite(hi) && hi > lo) return { minZ: lo, maxZ: hi };
                 }
                 return null;
+            },
+            getHighLow: () => {
+                let high: PointShape | null = null;
+                let low: PointShape | null = null;
+                for (const s of controller.shapes) {
+                    if (s.type !== "point") continue;
+                    if (high === null || s.z > high.z) high = s;
+                    if (low === null || s.z < low.z) low = s;
+                }
+                const differential = high && low ? high.z - low.z : null;
+                return { high, low, differential };
             },
         };
         return () => {
@@ -883,7 +902,6 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
 
                 <ContourLayer
                     data={contourData}
-                    gridBandFills={gridBandFills}
                     startColor={contourStartColor}
                     endColor={contourEndColor}
                     showFill={contourFill}
@@ -915,9 +933,77 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                         }
                     })}
                 </Layer>
+
+                <Layer listening={false}>
+                    {(() => {
+                        const invScale = 1 / Math.max(0.001, viewport.scale);
+                        const markers: React.ReactNode[] = [];
+                        const renderMarker = (
+                            p: PointShape,
+                            letter: "H" | "L",
+                            fill: string,
+                            stroke: string,
+                            text: string,
+                            key: string,
+                        ) => {
+                            const radius = 13;
+                            const offsetY = -26;
+                            markers.push(
+                                <Group key={key} x={p.x} y={p.y} listening={false}>
+                                    <Line
+                                        points={[0, offsetY * invScale, 0, -2 * invScale]}
+                                        stroke={stroke}
+                                        strokeWidth={1.5 * invScale}
+                                        dash={[3 * invScale, 2 * invScale]}
+                                        listening={false}
+                                        perfectDrawEnabled={false}
+                                    />
+                                    <Group
+                                        x={0}
+                                        y={offsetY * invScale}
+                                        scaleX={invScale}
+                                        scaleY={invScale}
+                                        listening={false}>
+                                        <Circle
+                                            radius={radius}
+                                            fill={fill}
+                                            stroke={stroke}
+                                            strokeWidth={2}
+                                            shadowColor="rgba(15,23,42,0.25)"
+                                            shadowBlur={4}
+                                            shadowOffsetY={1}
+                                            shadowOpacity={0.9}
+                                            listening={false}
+                                            perfectDrawEnabled={false}
+                                        />
+                                        <Text
+                                            x={-radius}
+                                            y={-radius}
+                                            width={radius * 2}
+                                            height={radius * 2}
+                                            align="center"
+                                            verticalAlign="middle"
+                                            text={letter}
+                                            fontSize={15}
+                                            fontStyle="bold"
+                                            fontFamily="Arial, Helvetica, sans-serif"
+                                            fill={text}
+                                            listening={false}
+                                        />
+                                    </Group>
+                                </Group>,
+                            );
+                        };
+                        if (highLow.high && highLow.low && highLow.high.tieid !== highLow.low.tieid) {
+                            renderMarker(highLow.high, "H", "#fee2e2", "#b91c1c", "#7f1d1d", "hl-high");
+                            renderMarker(highLow.low, "L", "#dbeafe", "#1d4ed8", "#1e3a8a", "hl-low");
+                        }
+                        return markers;
+                    })()}
+                </Layer>
             </Stage>
 
-            {contourData && contourData.heights?.length > 0 && (
+            {contourFill && contourData && contourData.heights?.length > 0 && (
                 <ContourLegend
                     startColor={contourStartColor}
                     endColor={contourEndColor}

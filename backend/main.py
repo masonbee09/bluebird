@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware # type: ignore
 from models.statics.json import BeamJSON
 from models.statics.beam import BeamInput, CreateBeam
 from core.units.imperial import *
-from models.countouring.json import ContourInput, ContourOutput, ContourPolygonInput
+from models.countouring.json import ContourInput, ContourOutput
 import logging
 
 app = FastAPI(title="Engineering Platform API")
@@ -17,8 +17,10 @@ logging.basicConfig(level=logging_level,
                     handlers=[logging.FileHandler(LOG_FILE)])
 
 origins = [
-    "http://localhost:5173",  # React default port
+    "http://localhost:5173",  # Vite default
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
 ]
 
 app.add_middleware(
@@ -67,23 +69,25 @@ def fls_get_contours(fls_input: ContourInput):
             lines[i].append([])
             for k in range(len(output.lines[i][j])):
                 lines[i][j].append({"x": output.lines[i][j][k][0], "y": output.lines[i][j][k][1]})
-    return {"status": "Okay",
-            "heights": output.input.heights,
-            "lines": lines,
-            "Xi": output.Xi,
-            "Yi": output.Yi,
-            "Zi": output.Zi,}
 
+    fills_payload = []
+    for band in (output.fills or []):
+        polygons = []
+        for poly in band.polygons:
+            rings = [[{"x": float(p[0]), "y": float(p[1])} for p in ring] for ring in poly.rings]
+            polygons.append({"rings": rings})
+        fills_payload.append({
+            "lo": band.lo,
+            "hi": band.hi,
+            "polygons": polygons,
+        })
 
-@app.post("/fls_get_contour_polygons")
-def fls_get_contour_polygons(fls_input: ContourPolygonInput):
-    output = fls_input.get_output()
-    print(output)
-    polygons = []
-    for i in range(len(output.polygons)):
-        polygons.append([])
-        for j in range(len(output.polygons[i])):
-            polygons[i].append({"x": output.polygons[i][j][0], "y": output.polygons[i][j][1]})
-    return {"status": "Okay",
-            "heights": output.heights,
-            "polygons": polygons}
+    return {
+        "status": "Okay",
+        "heights": output.input.heights,
+        "lines": lines,
+        "Xi": output.Xi,
+        "Yi": output.Yi,
+        "Zi": output.Zi,
+        "fills": fills_payload,
+    }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FloorLevelSurvey, { type FLSApi } from "../components/floor_level_survey/floorlevelsurvey";
 import { FloatInput } from "../components";
 import {
@@ -9,16 +9,37 @@ import {
     SaveIcon,
     OpenIcon,
     PdfIcon,
+    InfoIcon,
 } from "../components/floor_level_survey/tool_icons";
 import { interpolateContourColor } from "../components/floor_level_survey/contour_colors";
 import {
     saveProjectFile,
     readProjectFile,
     exportCanvasAsPDF,
+    type FLSProjectSettings,
 } from "../components/floor_level_survey/project_io";
-import type { Tool } from "../components/floor_level_survey/shape_types";
+import ProjectInfoModal, {
+    emptyProjectInfo,
+    type FLSProjectInfo,
+} from "../components/floor_level_survey/project_info_modal";
+import type { PointShape, Tool } from "../components/floor_level_survey/shape_types";
 import "./div_types.css";
 import "./floor_level_survey.css";
+
+
+const PROJECT_INFO_STORAGE_KEY = "fls.projectInfo";
+
+
+function loadStoredProjectInfo(): FLSProjectInfo {
+    try {
+        const raw = localStorage.getItem(PROJECT_INFO_STORAGE_KEY);
+        if (!raw) return emptyProjectInfo();
+        const parsed = JSON.parse(raw) as Partial<FLSProjectInfo>;
+        return { ...emptyProjectInfo(), ...parsed };
+    } catch {
+        return emptyProjectInfo();
+    }
+}
 
 
 interface ToolDef {
@@ -58,6 +79,12 @@ function FloorLevelSurveyPage() {
     const [contourFill, setContourFill] = useState<boolean>(() => {
         try { return localStorage.getItem("fls.contourFill") !== "0"; } catch { return true; }
     });
+    const [projectInfo, setProjectInfo] = useState<FLSProjectInfo>(() => loadStoredProjectInfo());
+    const [projectInfoOpen, setProjectInfoOpen] = useState<boolean>(false);
+    const [highPoint, setHighPoint] = useState<PointShape | null>(null);
+    const [lowPoint, setLowPoint] = useState<PointShape | null>(null);
+    const [differential, setDifferential] = useState<number | null>(null);
+
     useEffect(() => {
         try { localStorage.setItem("fls.contourStartColor", contourStartColor); } catch { /* ignore */ }
     }, [contourStartColor]);
@@ -67,6 +94,9 @@ function FloorLevelSurveyPage() {
     useEffect(() => {
         try { localStorage.setItem("fls.contourFill", contourFill ? "1" : "0"); } catch { /* ignore */ }
     }, [contourFill]);
+    useEffect(() => {
+        try { localStorage.setItem(PROJECT_INFO_STORAGE_KEY, JSON.stringify(projectInfo)); } catch { /* ignore */ }
+    }, [projectInfo]);
 
     const giveContourSpacing = () => contourSpacing ?? 0.1;
     const givePointHeight = () => pointHeight ?? 0.0;
@@ -74,11 +104,17 @@ function FloorLevelSurveyPage() {
     const flsApiRef = useRef<FLSApi | null>(null);
     const openInputRef = useRef<HTMLInputElement | null>(null);
 
+    const handleHighLowChange = useCallback((high: PointShape | null, low: PointShape | null, diff: number | null) => {
+        setHighPoint(high);
+        setLowPoint(low);
+        setDifferential(diff);
+    }, []);
+
     function triggerSolve() {
         setSolveTrigger(prev => prev + 1);
     }
 
-    function currentSettings() {
+    function currentSettings(): FLSProjectSettings {
         return {
             contourSpacing,
             pointHeight,
@@ -87,6 +123,7 @@ function FloorLevelSurveyPage() {
             contourStartColor,
             contourEndColor,
             contourFill,
+            projectInfo,
         };
     }
 
@@ -123,6 +160,7 @@ function FloorLevelSurveyPage() {
                 if (s.contourStartColor) setContourStartColor(s.contourStartColor);
                 if (s.contourEndColor) setContourEndColor(s.contourEndColor);
                 setContourFill(!!s.contourFill);
+                if (s.projectInfo) setProjectInfo({ ...emptyProjectInfo(), ...s.projectInfo });
             }
         } catch (err) {
             console.error(err);
@@ -196,6 +234,15 @@ function FloorLevelSurveyPage() {
                     <PdfIcon />
                     <span className="fls-toolstrip-label">PDF</span>
                 </button>
+                <button
+                    type="button"
+                    className="fls-toolstrip-btn"
+                    onClick={() => setProjectInfoOpen(true)}
+                    title="Project information"
+                    aria-label="Project information">
+                    <InfoIcon />
+                    <span className="fls-toolstrip-label">Project</span>
+                </button>
 
                 <div className="fls-toolstrip-divider" />
 
@@ -268,6 +315,7 @@ function FloorLevelSurveyPage() {
                         contourFill={contourFill}
                         setContourFill={setContourFill}
                         onActiveHeightChange={setPointHeight}
+                        onHighLowChange={handleHighLowChange}
                     />
                 </main>
 
@@ -280,6 +328,34 @@ function FloorLevelSurveyPage() {
                             </div>
                             <div className="fls-bottom-field">
                                 <FloatInput text="Contour spacing" onChange={setContourSpacing} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="fls-bottom-divider" />
+
+                    <div className="fls-bottom-group">
+                        <div className="fls-bottom-group-title">Survey Summary</div>
+                        <div className="fls-bottom-group-content fls-summary-content">
+                            <div className="fls-summary-stat">
+                                <span className="fls-summary-badge fls-summary-badge-high" aria-hidden="true">H</span>
+                                <span className="fls-summary-value">
+                                    {highPoint !== null ? highPoint.z.toFixed(2) : "—"}
+                                </span>
+                            </div>
+                            <div className="fls-summary-stat">
+                                <span className="fls-summary-badge fls-summary-badge-low" aria-hidden="true">L</span>
+                                <span className="fls-summary-value">
+                                    {lowPoint !== null ? lowPoint.z.toFixed(2) : "—"}
+                                </span>
+                            </div>
+                            <div className="fls-summary-stat fls-summary-stat-diff">
+                                <span className="fls-summary-key">Total Differential</span>
+                                <span className="fls-summary-value fls-summary-value-strong">
+                                    {differential !== null
+                                        ? `${differential.toFixed(2)} ${projectInfo.units || ""}`.trim()
+                                        : "—"}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -326,6 +402,13 @@ function FloorLevelSurveyPage() {
                     </div>
                 </footer>
             </div>
+
+            <ProjectInfoModal
+                open={projectInfoOpen}
+                value={projectInfo}
+                onClose={() => setProjectInfoOpen(false)}
+                onSave={setProjectInfo}
+            />
         </div>
     );
 }

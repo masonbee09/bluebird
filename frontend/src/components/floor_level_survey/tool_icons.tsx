@@ -130,6 +130,17 @@ export function OpenIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 
+export function InfoIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...baseProps} {...props}>
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <line x1="12" y1="10" x2="12" y2="17" />
+            <circle cx="12" cy="7.2" r="1.2" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+
+
 export function PdfIcon(props: SVGProps<SVGSVGElement>) {
     return (
         <svg {...baseProps} {...props}>
