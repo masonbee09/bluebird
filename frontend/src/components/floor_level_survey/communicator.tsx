@@ -1,9 +1,10 @@
 import FLSController from "./flscontroller"
 
 
-
-const url = "http://127.0.0.1:8001/fls_get_contours"
-
+// Polygon-aware contour endpoint. Unlike the previous line-only endpoint, this
+// returns filled polygons clipped to the wall boundary so we can colour-fill
+// the floor plan directly on the canvas.
+const url = "http://127.0.0.1:8001/fls_get_contour_polygons"
 
 
 class Communicator {
@@ -32,8 +33,8 @@ class Communicator {
                 maxY = Math.max(maxY, shape.y + shape.radius);
             } else if (shape.type === "wall") {
                 for (let i = 0; i < shape.points.length; i += 2) {
-                    let x = shape.points[i];
-                    let y = shape.points[i + 1];
+                    const x = shape.points[i];
+                    const y = shape.points[i + 1];
                     minX = Math.min(minX, x);
                     minY = Math.min(minY, y);
                     maxX = Math.max(maxX, x);
@@ -48,10 +49,8 @@ class Communicator {
     getPoints() {
         if (this.checkForDuplicatePoints()) {
             throw new Error("Duplicate points detected. Please ensure all points have unique coordinates.");
-        } else {
-            console.log("No duplicate points detected.");
         }
-        let points: { x: number; y: number; z: number }[] = [];
+        const points: { x: number; y: number; z: number }[] = [];
 
         this.parent.shapes.forEach((shape) => {
             if (shape.type === "point") {
@@ -63,24 +62,22 @@ class Communicator {
     }
 
     checkForDuplicatePoints() {
-        let pointSet = new Set<string>();
-        for (let shape of this.parent.shapes) {
+        const pointSet = new Set<string>();
+        for (const shape of this.parent.shapes) {
             if (shape.type === "point") {
-                let key = `${shape.x},${shape.y}`;
+                const key = `${shape.x},${shape.y}`;
                 if (pointSet.has(key)) {
-                    return true; // Duplicate found
+                    return true;
                 }
                 pointSet.add(key);
             }
         }
-        return false; // No duplicates
+        return false;
     }
 
     getHeights() {
         let minz: number = Infinity;
         let maxz: number = -Infinity;
-
-        //find the minimum and maximum z among the points
 
         this.parent.shapes.forEach((shape) => {
             if (shape.type === "point") {
@@ -89,9 +86,8 @@ class Communicator {
             }
         });
 
-        //use the min and max z to create contour heights
-        let heights: number[] = [];
-        let step = this.parent.getContourSpacing();
+        const heights: number[] = [];
+        const step = this.parent.getContourSpacing();
         for (let h = minz - step * .5; h <= maxz + step * .5; h += step) {
             heights.push(h);
         }
@@ -99,28 +95,46 @@ class Communicator {
         return heights;
     }
 
-    getWalls() {
-        const walls: { x1: number; y1: number; x2: number; y2: number }[] = [];
-        this.parent.shapes.forEach((shape) => {
-            if (shape.type === "wall") {
-                const pts = shape.points;
-                for (let i = 0; i + 3 < pts.length; i += 2) {
-                    walls.push({ x1: pts[i], y1: pts[i + 1], x2: pts[i + 2], y2: pts[i + 3] });
-                }
+    /**
+     * Build an ordered list of wall vertices forming the floor-plan polygon.
+     *
+     * The polygon-aware backend expects a single ordered polyline (``wall_points``).
+     * The user's wall-drawing flow stores each drawn wall as a ``WallShape`` whose
+     * ``points`` array is a flattened ``[x0, y0, x1, y1, ...]`` polyline (the
+     * polygon tool finalises one connected polyline per double-click).
+     *
+     * Strategy:
+     *   - Prefer the longest wall shape as the enclosing boundary.
+     *   - Concatenate subsequent wall shapes onto the tail so multi-part walls
+     *     still reach the backend (the backend will ``make_valid`` it).
+     *   - If no walls exist, return an empty list so the backend falls back to
+     *     the bounding rectangle.
+     */
+    getWallPoints(): { x: number; y: number; z: number }[] {
+        const walls = this.parent.shapes.filter(
+            (s): s is Extract<typeof s, { type: "wall" }> => s.type === "wall",
+        );
+        if (walls.length === 0) return [];
+
+        const sorted = [...walls].sort((a, b) => b.points.length - a.points.length);
+        const out: { x: number; y: number; z: number }[] = [];
+        for (const wall of sorted) {
+            for (let i = 0; i + 1 < wall.points.length; i += 2) {
+                out.push({ x: wall.points[i], y: wall.points[i + 1], z: 0 });
             }
-        });
-        return walls;
+        }
+        return out;
     }
 
     createJsonData() {
         const bounds = this.getBounds();
         const points = this.getPoints();
         const heights = this.getHeights();
-        const walls = this.getWalls();
+        const wall_points = this.getWallPoints();
         return {
             bounds,
             points,
-            walls,
+            wall_points,
             heights,
             resolution: 150,
         };
@@ -128,23 +142,20 @@ class Communicator {
 
 
     async fetchContours() {
-        let data = this.createJsonData();
+        const data = this.createJsonData();
         const response = await fetch(url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json', // Required for the server to recognize JSON
-                'Accept': 'application/json'        // Optional: Tells the server you expect JSON back
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
-            body: JSON.stringify(data)            // Convert your object to a JSON string
+            body: JSON.stringify(data)
         });
 
-        // 3. Check if the request was successful
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        // 4. Parse the JSON response
-        // Note: response.json() returns 'Promise<any>', so cast it to your interface
         const result = await response.json();
         return result;
     }

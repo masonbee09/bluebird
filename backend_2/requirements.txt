@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+pint
+pytest
+numpy
+pydantic_pint
+matplotlib
+contourpy
+scipy
+shapely

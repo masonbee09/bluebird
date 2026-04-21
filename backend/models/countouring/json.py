@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import math
+from shapely.geometry import LineString, MultiLineString, GeometryCollection, Polygon, LinearRing
+from shapely.validation import make_valid
+
 from models.countouring.contourmap import *
 
 
@@ -116,4 +119,144 @@ def GetOutputFromInput(input: ContourInput):
         "Yi": Yi_list,
         "Zi": Zi_list,
         "fills": fills,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Polygon-aware contour API
+# ---------------------------------------------------------------------------
+
+
+class ContourPolygonInput(BaseModel):
+    """Input for the polygon-aware contour endpoint.
+
+    Unlike :class:`ContourInput` (which receives ``walls`` as individual line
+    segments), this API receives ``wall_points`` as a single ordered polyline
+    forming the wall polygon. Each contour height yields a closed polygon
+    clipped to the wall polygon, ready to colour-fill on the client.
+    """
+
+    bounds: List[float] = Field(min_length=4, max_length=4, description="[0]=xMin, [1]=yMin, [2]=xMax, [3]=yMax")
+    points: List[PointInput]
+    wall_points: List[PointInput] = Field(default_factory=list)
+    heights: List[float]
+    resolution: int = 150
+
+    def get_output(self):
+        return GetPolygonOutputFromInput(self)
+
+
+class ContourPolygonOutput(BaseModel):
+    input: ContourPolygonInput
+    polygons: List = Field(default_factory=list)
+    heights: List = Field(default_factory=list)
+    lines: List = Field(default_factory=list)
+    line_heights: List = Field(default_factory=list)
+
+
+def _expand_to_rect(bounds: List[float]):
+    """Return a closed rectangle polyline from [xMin, yMin, xMax, yMax]."""
+    x_min, y_min, x_max, y_max = bounds
+    return (
+        [x_min, x_max, x_max, x_min, x_min],
+        [y_min, y_min, y_max, y_max, y_min],
+    )
+
+
+def GetPolygonOutputFromInput(input: ContourPolygonInput):
+    # Build a closed wall polyline. When absent, use bounding rectangle.
+    if len(input.wall_points) >= 3:
+        wall_pts = [(float(p.x), float(p.y)) for p in input.wall_points]
+    else:
+        wall_xs, wall_ys = _expand_to_rect(input.bounds)
+        wall_pts = list(zip(wall_xs, wall_ys))
+
+    if wall_pts[0] != wall_pts[-1]:
+        wall_pts.append(wall_pts[0])
+
+    # Convert polyline to wall segments for ContourMap clipping/fill bands.
+    wall_segments = []
+    for i in range(len(wall_pts) - 1):
+        a = wall_pts[i]
+        b = wall_pts[i + 1]
+        if a != b:
+            wall_segments.append((a, b))
+
+    contour_map = CreateContourMap(
+        [p.x for p in input.points],
+        [p.y for p in input.points],
+        [p.z for p in input.points],
+        input.bounds,
+        resolution=input.resolution,
+        wall_segments=wall_segments,
+    )
+
+    # Accurate filled contour bands (non-overlapping intervals) clipped to wall.
+    # This replaces the old "close line to rectangle" approximation that caused
+    # cross-wall wedges and incorrect color ownership.
+    polygons_out: List[List[List[tuple]]] = []
+    polygon_heights: List[float] = []
+    bands = contour_map.filled_bands(input.heights)
+    for band in bands:
+        lo = float(band["lo"])
+        hi = float(band["hi"])
+        h_mid = (lo + hi) * 0.5
+        for poly in band["polygons"]:
+            rings: List[List[tuple]] = []
+            for ring in poly:
+                coords = [(float(x), float(y)) for (x, y) in ring]
+                if len(coords) < 3:
+                    continue
+                # Normalize closure and orientation for stable even-odd rendering.
+                if coords[0] != coords[-1]:
+                    coords.append(coords[0])
+                try:
+                    ring_obj = LinearRing(coords)
+                    coords = list(ring_obj.coords)
+                except Exception:
+                    continue
+                rings.append(coords)
+            if rings:
+                polygons_out.append(rings)
+                polygon_heights.append(h_mid)
+
+    wall_polygon = make_valid(Polygon(wall_pts))
+
+    # Clip contour lines against the wall polygon.
+    raw_lines: List = [contour_map.lines_at_height(h) for h in input.heights]
+    clipped_lines: List[List] = []
+    clipped_line_heights: List[float] = []
+    for hi, lines_at_h in enumerate(raw_lines):
+        for line in lines_at_h:
+            if line is None or len(line) < 2:
+                continue
+            try:
+                ls = LineString([(float(p[0]), float(p[1])) for p in line])
+            except Exception:
+                continue
+            if not ls.is_valid:
+                continue
+            inter = ls.intersection(wall_polygon)
+            if inter.is_empty:
+                continue
+            geoms = []
+            if isinstance(inter, LineString):
+                geoms = [inter]
+            elif isinstance(inter, MultiLineString):
+                geoms = list(inter.geoms)
+            elif isinstance(inter, GeometryCollection):
+                geoms = [g for g in inter.geoms if isinstance(g, LineString)]
+            for geom in geoms:
+                coords = list(geom.coords)
+                if len(coords) < 2:
+                    continue
+                clipped_lines.append(coords)
+                clipped_line_heights.append(float(input.heights[hi]))
+
+    return ContourPolygonOutput.model_validate({
+        "input": input,
+        "polygons": polygons_out,
+        "heights": polygon_heights,
+        "lines": clipped_lines,
+        "line_heights": clipped_line_heights,
     })
