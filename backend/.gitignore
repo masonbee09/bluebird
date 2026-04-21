@@ -1,0 +1,24 @@
+# Backend-specific ignores
+
+# API / runtime logs must never be committed.
+api.log
+*.log
+*.log.*
+logs/
+
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments (common layouts)
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
