@@ -6,12 +6,6 @@ export type ContourPoint = { x: number; y: number } | [number, number];
 export type ContourPolyline = ContourPoint[];
 
 
-/**
- * Polygon-aware contour data returned by the `/fls_get_contour_polygons`
- * backend endpoint. Each polygon has already been closed against the bounding
- * rectangle and intersected with the wall polygon, so the frontend can paint
- * it directly without any additional geometry processing.
- */
 export interface ContourData {
     status?: string;
     /** User-requested contour levels (used for legend min/max). */

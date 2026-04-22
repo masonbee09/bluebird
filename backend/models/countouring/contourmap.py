@@ -6,8 +6,8 @@ import logging
 from scipy.interpolate import (
     LinearNDInterpolator,
     CloughTocher2DInterpolator,
-    NearestNDInterpolator,
 )
+from scipy.spatial import cKDTree
 
 from shapely.geometry import LineString, Polygon, MultiPolygon
 from shapely.geometry.base import BaseGeometry
@@ -140,18 +140,32 @@ class ContourMap(BaseModel):
                 logging.warning(f"LinearND interpolation failed: {exc}; using nearest")
                 Zi = np.full(Xi.shape, np.nan)
 
-        # When a wall polygon is present we fill all NaN cells with nearest-
-        # neighbour values so the interpolated field is defined everywhere on
-        # the grid. This allows contour lines to extend past the convex hull of
-        # the sample points. We then rely on the shapely intersection below to
-        # trim contours exactly at the wall boundary. Without walls we leave
-        # NaN in place so contours stop at the data hull (existing behaviour).
+        # When a wall polygon is present we fill all NaN cells (outside the
+        # convex hull of the sample points) with a SMOOTH inverse-distance
+        # weighted kNN extrapolation. A naive NearestNDInterpolator produces a
+        # step function whose discontinuities at the hull boundary and at
+        # Voronoi cell edges create spurious "ghost" contour lines along the
+        # walls. IDW blending is continuous (C0) so it joins the CloughTocher
+        # region without discontinuities.
         if clip_geom is not None and len(self.xs) > 0:
             nan_mask = np.isnan(Zi)
             if np.any(nan_mask):
-                nearest = NearestNDInterpolator(pts, zs)
-                fill_vals = nearest(Xi[nan_mask], Yi[nan_mask])
-                Zi[nan_mask] = fill_vals
+                try:
+                    tree = cKDTree(pts)
+                    query_points = np.column_stack([Xi[nan_mask], Yi[nan_mask]])
+                    k = min(8, len(pts))
+                    dist, idx = tree.query(query_points, k=k)
+                    if k == 1:
+                        dist = dist[:, np.newaxis]
+                        idx = idx[:, np.newaxis]
+                    neighbour_z = zs[idx]
+                    weights = 1.0 / (dist ** 2 + 1e-9)
+                    weights /= weights.sum(axis=1, keepdims=True)
+                    Zi[nan_mask] = np.sum(weights * neighbour_z, axis=1)
+                except Exception as exc:
+                    logging.warning(
+                        f"IDW extrapolation failed: {exc}; leaving NaN in place"
+                    )
 
         self._clip_geom_cached = clip_geom
         return (Xi, Yi, Zi)

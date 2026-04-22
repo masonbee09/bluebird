@@ -141,13 +141,9 @@ def fls_get_contour_polygons(fls_input: ContourPolygonInput):
 
     return {
         "status": "Okay",
-        # User-requested contour levels (independent of whether they produced
-        # visible polygons). Frontend uses this for the colour legend range.
         "heights": [float(h) for h in fls_input.heights],
-        # One polygon per entry in polygon_heights; each clipped to the wall.
         "polygons": polygons_payload,
         "polygon_heights": polygon_heights,
-        # Clipped contour lines + their per-line height.
         "lines": lines_payload,
         "line_heights": line_heights,
     }
