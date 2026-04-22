@@ -17,6 +17,7 @@ import {
     readProjectFile,
     exportCanvasAsPDF,
     type FLSProjectSettings,
+    type PdfOrientation,
 } from "../components/floor_level_survey/project_io";
 import ProjectInfoModal, {
     emptyProjectInfo,
@@ -79,6 +80,13 @@ function FloorLevelSurveyPage() {
     const [contourFill, setContourFill] = useState<boolean>(() => {
         try { return localStorage.getItem("fls.contourFill") !== "0"; } catch { return true; }
     });
+    const [pdfOrientation, setPdfOrientation] = useState<PdfOrientation>(() => {
+        try {
+            const v = localStorage.getItem("fls.pdfOrientation");
+            if (v === "portrait" || v === "landscape" || v === "auto") return v;
+        } catch { /* ignore */ }
+        return "auto";
+    });
     const [projectInfo, setProjectInfo] = useState<FLSProjectInfo>(() => loadStoredProjectInfo());
     const [projectInfoOpen, setProjectInfoOpen] = useState<boolean>(false);
     const [highPoint, setHighPoint] = useState<PointShape | null>(null);
@@ -94,6 +102,9 @@ function FloorLevelSurveyPage() {
     useEffect(() => {
         try { localStorage.setItem("fls.contourFill", contourFill ? "1" : "0"); } catch { /* ignore */ }
     }, [contourFill]);
+    useEffect(() => {
+        try { localStorage.setItem("fls.pdfOrientation", pdfOrientation); } catch { /* ignore */ }
+    }, [pdfOrientation]);
     useEffect(() => {
         try { localStorage.setItem(PROJECT_INFO_STORAGE_KEY, JSON.stringify(projectInfo)); } catch { /* ignore */ }
     }, [projectInfo]);
@@ -123,6 +134,7 @@ function FloorLevelSurveyPage() {
             contourStartColor,
             contourEndColor,
             contourFill,
+            pdfOrientation,
             projectInfo,
         };
     }
@@ -160,6 +172,9 @@ function FloorLevelSurveyPage() {
                 if (s.contourStartColor) setContourStartColor(s.contourStartColor);
                 if (s.contourEndColor) setContourEndColor(s.contourEndColor);
                 setContourFill(!!s.contourFill);
+                if (s.pdfOrientation === "portrait" || s.pdfOrientation === "landscape" || s.pdfOrientation === "auto") {
+                    setPdfOrientation(s.pdfOrientation);
+                }
                 if (s.projectInfo) setProjectInfo({ ...emptyProjectInfo(), ...s.projectInfo });
             }
         } catch (err) {
@@ -173,19 +188,19 @@ function FloorLevelSurveyPage() {
         const api = flsApiRef.current;
         if (!api) return;
         try {
-            const dataUrl = api.getStageDataURL(2);
-            if (!dataUrl) {
+            const img = api.getExportImage(3);
+            if (!img) {
                 window.alert("Canvas is not ready for export yet.");
                 return;
             }
-            const { width, height } = api.getStageSize();
             exportCanvasAsPDF({
-                dataUrl,
-                stageWidth: width,
-                stageHeight: height,
+                dataUrl: img.dataUrl,
+                stageWidth: img.width,
+                stageHeight: img.height,
                 shapes: api.getShapes(),
                 settings: currentSettings(),
                 legendRange: api.getLegendRange(),
+                legendLevels: api.getLegendLevels(),
             });
         } catch (err) {
             console.error(err);
@@ -392,6 +407,35 @@ function FloorLevelSurveyPage() {
                                 />
                                 <span className="fls-color-hex">{contourEndColor.toUpperCase()}</span>
                             </label>
+                        </div>
+                    </div>
+
+                    <div className="fls-bottom-divider" />
+
+                    <div className="fls-bottom-group">
+                        <div className="fls-bottom-group-title">PDF Layout</div>
+                        <div className="fls-bottom-group-content">
+                            <div
+                                className="fls-segmented"
+                                role="radiogroup"
+                                aria-label="PDF orientation">
+                                {(["auto", "portrait", "landscape"] as const).map(opt => (
+                                    <button
+                                        key={opt}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={pdfOrientation === opt}
+                                        className={`fls-segmented-btn${pdfOrientation === opt ? " is-active" : ""}`}
+                                        onClick={() => setPdfOrientation(opt)}
+                                        title={`Export PDF in ${opt} layout`}>
+                                        {opt === "auto"
+                                            ? "Auto"
+                                            : opt === "portrait"
+                                                ? "Portrait"
+                                                : "Landscape"}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
 

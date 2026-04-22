@@ -22,6 +22,24 @@
     border: 1px solid var(--color-border-strong);
 }
 
+.fls-contour-legend-bar.is-discrete {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #fff;
+}
+
+.fls-contour-legend-band {
+    width: 100%;
+    flex-grow: 0;
+    flex-shrink: 0;
+    border-top: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.fls-contour-legend-band:first-child {
+    border-top: none;
+}
+
 .fls-contour-legend-ticks {
     position: relative;
     min-width: 32px;

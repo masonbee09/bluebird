@@ -17,13 +17,28 @@ import ContourLegend from "./contour_legend";
 import "./floorlevelsurvey.css";
 
 
+export interface FLSExportImage {
+    dataUrl: string;
+    /** CSS-pixel width of the captured region (used as aspect source for the PDF). */
+    width: number;
+    /** CSS-pixel height of the captured region. */
+    height: number;
+}
+
+
 export interface FLSApi {
     getShapes: () => Shape[];
     loadShapes: (shapes: Shape[]) => void;
     getStageDataURL: (pixelRatio?: number) => string | null;
     getStageSize: () => { width: number; height: number };
+    /** Capture the drawing for PDF export: grid is hidden, stage is temporarily
+     * reframed so all content fits, and only the content bounding box is
+     * rasterized. Returns null when the stage is not mounted. */
+    getExportImage: (pixelRatio?: number) => FLSExportImage | null;
     /** Min/max contour level from last solve; null if contours were not computed. */
     getLegendRange: () => { minZ: number; maxZ: number } | null;
+    /** All contour level values from the last solve (ascending); null if none. */
+    getLegendLevels: () => number[] | null;
     /** Highest- and lowest-elevation point shapes currently in the scene. */
     getHighLow: () => { high: PointShape | null; low: PointShape | null; differential: number | null };
 }
@@ -800,12 +815,94 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 width: stageDimensions.width,
                 height: stageDimensions.height,
             }),
+            getExportImage: (pixelRatio = 3) => {
+                const stage = stageRef.current;
+                if (!stage) return null;
+
+                const layers = stage.getLayers();
+                const gridLayer = layers[0];
+                const gridWasVisible = gridLayer?.visible() ?? true;
+
+                const prevScale = stage.scaleX() || 1;
+                const prevX = stage.x();
+                const prevY = stage.y();
+
+                try {
+                    if (gridLayer) gridLayer.visible(false);
+
+                    const [minX, minY, maxX, maxY] = controller.communicator.getBounds();
+                    const w = stageDimensions.width;
+                    const h = stageDimensions.height;
+
+                    const hasContent =
+                        isFinite(minX) && isFinite(maxX) && isFinite(minY) && isFinite(maxY) &&
+                        maxX > minX && maxY > minY && w > 0 && h > 0;
+
+                    if (!hasContent) {
+                        stage.batchDraw();
+                        const dataUrl = stage.toDataURL({ pixelRatio, mimeType: "image/png" });
+                        return { dataUrl, width: w || 1, height: h || 1 };
+                    }
+
+                    const margin = 24;
+                    const bboxW = maxX - minX;
+                    const bboxH = maxY - minY;
+                    const fitScaleX = (w - margin * 2) / bboxW;
+                    const fitScaleY = (h - margin * 2) / bboxH;
+                    const fitScale = Math.min(
+                        MAX_SCALE,
+                        Math.max(MIN_SCALE, Math.min(fitScaleX, fitScaleY)),
+                    );
+                    const cx = (minX + maxX) / 2;
+                    const cy = (minY + maxY) / 2;
+                    const posX = w / 2 - cx * fitScale;
+                    const posY = h / 2 - cy * fitScale;
+
+                    stage.scale({ x: fitScale, y: fitScale });
+                    stage.position({ x: posX, y: posY });
+                    stage.draw();
+
+                    const padPx = 16;
+                    const sxRaw = minX * fitScale + posX - padPx;
+                    const syRaw = minY * fitScale + posY - padPx;
+                    const swRaw = bboxW * fitScale + padPx * 2;
+                    const shRaw = bboxH * fitScale + padPx * 2;
+                    const sx = Math.max(0, sxRaw);
+                    const sy = Math.max(0, syRaw);
+                    const sw = Math.max(1, Math.min(w - sx, swRaw - (sx - sxRaw)));
+                    const sh = Math.max(1, Math.min(h - sy, shRaw - (sy - syRaw)));
+
+                    const dataUrl = stage.toDataURL({
+                        x: sx,
+                        y: sy,
+                        width: sw,
+                        height: sh,
+                        pixelRatio,
+                        mimeType: "image/png",
+                    });
+                    return { dataUrl, width: sw, height: sh };
+                } finally {
+                    stage.scale({ x: prevScale, y: prevScale });
+                    stage.position({ x: prevX, y: prevY });
+                    if (gridLayer) gridLayer.visible(gridWasVisible);
+                    stage.batchDraw();
+                }
+            },
             getLegendRange: () => {
                 if (contourData && Array.isArray(contourData.heights) && contourData.heights.length > 0) {
                     const hs = contourData.heights;
                     const lo = Math.min(...hs);
                     const hi = Math.max(...hs);
                     if (isFinite(lo) && isFinite(hi) && hi > lo) return { minZ: lo, maxZ: hi };
+                }
+                return null;
+            },
+            getLegendLevels: () => {
+                if (contourData && Array.isArray(contourData.heights) && contourData.heights.length > 0) {
+                    const hs = [...contourData.heights].filter(v => isFinite(v));
+                    if (hs.length < 2) return null;
+                    hs.sort((a, b) => a - b);
+                    return hs;
                 }
                 return null;
             },
@@ -1009,6 +1106,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     endColor={contourEndColor}
                     minZ={Math.min(...contourData.heights)}
                     maxZ={Math.max(...contourData.heights)}
+                    levels={contourData.heights}
                 />
             )}
 

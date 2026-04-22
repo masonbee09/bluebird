@@ -305,6 +305,45 @@
     align-self: center;
 }
 
+.fls-segmented {
+    display: inline-flex;
+    padding: 2px;
+    gap: 2px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface, #f5f6f8);
+}
+
+.fls-segmented-btn {
+    appearance: none;
+    background: transparent;
+    border: none;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--color-text-muted);
+    border-radius: calc(var(--radius-md) - 2px);
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease,
+        box-shadow 0.12s ease;
+}
+
+.fls-segmented-btn:hover {
+    color: var(--color-text);
+}
+
+.fls-segmented-btn.is-active {
+    background-color: #fff;
+    color: var(--color-text);
+    box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--color-border-strong);
+}
+
+.fls-segmented-btn:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+}
+
 .fls-summary-content {
     gap: 10px;
 }

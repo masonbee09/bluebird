@@ -8,6 +8,9 @@ export const FLS_PROJECT_SCHEMA = "blue-bird.fls.project";
 export const FLS_PROJECT_VERSION = 2;
 
 
+export type PdfOrientation = "auto" | "portrait" | "landscape";
+
+
 export interface FLSProjectSettings {
     contourSpacing: number | null;
     pointHeight: number | null;
@@ -16,6 +19,7 @@ export interface FLSProjectSettings {
     contourStartColor: string;
     contourEndColor: string;
     contourFill: boolean;
+    pdfOrientation?: PdfOrientation;
     projectInfo?: FLSProjectInfo;
 }
 
@@ -148,6 +152,8 @@ export interface ExportPDFOptions {
     settings: FLSProjectSettings;
     /** Contour level range from last solve; falls back to point Z range when omitted. */
     legendRange?: { minZ: number; maxZ: number } | null;
+    /** All contour level values from the last solve; enables the discrete color bar. */
+    legendLevels?: number[] | null;
     filenameBase?: string;
 }
 
@@ -176,7 +182,11 @@ function legendRangeFromShapes(shapes: Shape[]): { minZ: number; maxZ: number } 
 }
 
 
-/** Vertical color bar + tick labels (matches on-screen legend: low at bottom, high at top). */
+/** Vertical color bar + tick labels (matches on-screen legend: low at bottom, high at top).
+ *
+ * When `levels` is provided (length >= 2), the bar is drawn as discrete color
+ * bands (one per interval between consecutive levels) with a label at each
+ * level boundary, matching the filled contour drawing. */
 function drawContourLegend(
     pdf: jsPDF,
     opts: {
@@ -188,10 +198,61 @@ function drawContourLegend(
         maxZ: number;
         startColor: string;
         endColor: string;
+        levels?: number[] | null;
         tickCount?: number;
     },
 ) {
-    const { x, y, width, height, minZ, maxZ, startColor, endColor, tickCount = 6 } = opts;
+    const { x, y, width, height, minZ, maxZ, startColor, endColor, levels, tickCount = 6 } = opts;
+
+    const useDiscrete = Array.isArray(levels) && levels.length >= 2;
+
+    if (useDiscrete) {
+        const sorted = [...(levels as number[])].filter(v => isFinite(v)).sort((a, b) => a - b);
+        const lo = sorted[0];
+        const hi = sorted[sorted.length - 1];
+        const span = Math.max(1e-9, hi - lo);
+
+        for (let i = 0; i < sorted.length - 1; i++) {
+            const bandLo = sorted[i];
+            const bandHi = sorted[i + 1];
+            const mid = (bandLo + bandHi) / 2;
+            const col = interpolateContourColor(startColor, endColor, (mid - lo) / span);
+            const [r, g, b] = hexToRgb(col);
+            const yBottom = y + height - ((bandLo - lo) / span) * height;
+            const yTop = y + height - ((bandHi - lo) / span) * height;
+            const bandH = yBottom - yTop;
+            pdf.setFillColor(r, g, b);
+            pdf.rect(x, yTop, width, bandH + 0.4, "F");
+        }
+
+        pdf.setDrawColor(55);
+        pdf.setLineWidth(0.5);
+        pdf.rect(x, y, width, height, "S");
+
+        pdf.setDrawColor(70);
+        for (let i = 1; i < sorted.length - 1; i++) {
+            const yLine = y + height - ((sorted[i] - lo) / span) * height;
+            pdf.setLineWidth(0.2);
+            pdf.line(x, yLine, x + width, yLine);
+        }
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.setTextColor(0);
+        const labelX = x + width + 8;
+        pdf.text("z", labelX, y - 4);
+
+        for (let i = 0; i < sorted.length; i++) {
+            const v = sorted[i];
+            const tickY = y + height - ((v - lo) / span) * height;
+            pdf.setDrawColor(80);
+            pdf.setLineWidth(0.5);
+            pdf.line(x + width, tickY, x + width + 5, tickY);
+            pdf.text(v.toFixed(1), labelX, tickY + 3);
+        }
+        return;
+    }
+
     const strips = 96;
     for (let i = 0; i < strips; i++) {
         const tFromBottom = (strips - 1 - i) / Math.max(1, strips - 1);
@@ -478,6 +539,7 @@ export function exportCanvasAsPDF(opts: ExportPDFOptions) {
         shapes,
         settings,
         legendRange: legendRangeOpt,
+        legendLevels,
         filenameBase = "floor-level-survey",
     } = opts;
 
@@ -485,9 +547,15 @@ export function exportCanvasAsPDF(opts: ExportPDFOptions) {
         ? { ...emptyProjectInfo(), ...settings.projectInfo }
         : emptyProjectInfo();
 
-    const landscape = stageWidth >= stageHeight;
+    const requested: PdfOrientation = settings.pdfOrientation ?? "auto";
+    const isLandscape =
+        requested === "landscape"
+            ? true
+            : requested === "portrait"
+                ? false
+                : stageWidth >= stageHeight;
     const pdf = new jsPDF({
-        orientation: landscape ? "landscape" : "portrait",
+        orientation: isLandscape ? "landscape" : "portrait",
         unit: "pt",
         format: "a4",
     });
@@ -517,8 +585,14 @@ export function exportCanvasAsPDF(opts: ExportPDFOptions) {
         imgH = imgAreaH;
         imgW = imgH * aspect;
     }
-    const imgX = margin + Math.max(0, (imgAreaW - imgW) / 2);
-    const imgY = imgTop;
+    // Center the image (and the legend column it pairs with) within the
+    // available area. In portrait mode this keeps the drawing in the middle
+    // of the page rather than pinned to the top-left.
+    const blockW = imgW + (legend ? legendColWidth : 0);
+    const availW = pageW - margin * 2;
+    const blockLeft = margin + Math.max(0, (availW - blockW) / 2);
+    const imgX = blockLeft;
+    const imgY = imgTop + Math.max(0, (imgAreaH - imgH) / 2);
 
     // Canvas snapshot with a soft border
     pdf.setDrawColor(200);
@@ -530,7 +604,7 @@ export function exportCanvasAsPDF(opts: ExportPDFOptions) {
         const barW = 14;
         const barTopPad = 10;
         const barBottomPad = 10;
-        const barX = margin + imgAreaW + 12;
+        const barX = imgX + imgW + 12;
         const barY = imgY + barTopPad;
         const barH = Math.max(72, imgH - barTopPad - barBottomPad);
         drawContourLegend(pdf, {
@@ -542,6 +616,7 @@ export function exportCanvasAsPDF(opts: ExportPDFOptions) {
             maxZ: legend.maxZ,
             startColor: settings.contourStartColor,
             endColor: settings.contourEndColor,
+            levels: legendLevels ?? null,
         });
     }
 
