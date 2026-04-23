@@ -167,6 +167,14 @@ class ContourMap(BaseModel):
                         f"IDW extrapolation failed: {exc}; leaving NaN in place"
                     )
 
+        # Cubic interpolation can overshoot at sparse/irregular samples, which
+        # manifests as small artificial spikes ("peaks"). Clamp the field to
+        # measured Z range to keep contours physically plausible.
+        if len(zs) > 0:
+            zmin = float(np.min(zs))
+            zmax = float(np.max(zs))
+            Zi = np.where(np.isnan(Zi), Zi, np.clip(Zi, zmin, zmax))
+
         self._clip_geom_cached = clip_geom
         return (Xi, Yi, Zi)
 

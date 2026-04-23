@@ -100,13 +100,7 @@ function FloorLevelSurveyPage() {
     const [projectInfo, setProjectInfo] = useState<FLSProjectInfo>(() => loadStoredProjectInfo());
     const [projectInfoOpen, setProjectInfoOpen] = useState<boolean>(false);
 
-    const [materials, setMaterials] = useState<FloorMaterial[]>(() => {
-        try {
-            const raw = localStorage.getItem("fls.materials");
-            if (!raw) return [];
-            return JSON.parse(raw) as FloorMaterial[];
-        } catch { return []; }
-    });
+    const [materials, setMaterials] = useState<FloorMaterial[]>([]);
     const [selectedMaterialIndex, setSelectedMaterialIndex] = useState<number>(-1);
 
     const [materialsDialogOpen, setMaterialsDialogOpen] = useState(false);
@@ -126,9 +120,6 @@ function FloorLevelSurveyPage() {
     const bgFileInputRef = useRef<HTMLInputElement | null>(null);
     const [pdfDialogOpen, setPdfDialogOpen] = useState<boolean>(false);
 
-    // Track whether a contour solve has ever succeeded. Used to decide
-    // whether "Contour spacing" changes should auto re-solve.
-    const hasSolvedRef = useRef<boolean>(false);
 
     useEffect(() => {
         try { localStorage.setItem("fls.contourStartColor", contourStartColor); } catch { /* ignore */ }
@@ -148,9 +139,6 @@ function FloorLevelSurveyPage() {
     useEffect(() => {
         try { localStorage.setItem(PROJECT_INFO_STORAGE_KEY, JSON.stringify(projectInfo)); } catch { /* ignore */ }
     }, [projectInfo]);
-    useEffect(() => {
-        try { localStorage.setItem("fls.materials", JSON.stringify(materials)); } catch { /* ignore */ }
-    }, [materials]);
 
     // Automatically exit "Adjust background" mode when the user switches to
     // any drawing tool. Otherwise the Transformer on the background image
@@ -271,25 +259,11 @@ function FloorLevelSurveyPage() {
         setHighPoint(high);
         setLowPoint(low);
         setDifferential(diff);
-        // Contour data has just arrived — remember that we've solved at least
-        // once, so the spacing field can auto re-solve on subsequent edits.
-        if (diff !== null) hasSolvedRef.current = true;
     }, []);
 
     function triggerSolve() {
         setSolveTrigger(prev => prev + 1);
     }
-
-    // Auto-re-solve when the contour spacing changes, but only if we already
-    // have a computed contour — otherwise users shouldn't have the initial
-    // typing recompute on every keystroke before they've pressed Solve.
-    useEffect(() => {
-        if (!hasSolvedRef.current) return;
-        const spacing = contourSpacing ?? 0.1;
-        if (!isFinite(spacing) || spacing <= 0) return;
-        const t = setTimeout(() => { triggerSolve(); }, 350);
-        return () => clearTimeout(t);
-    }, [contourSpacing]);
 
     function currentSettings(): FLSProjectSettings {
         return {
@@ -319,6 +293,11 @@ function FloorLevelSurveyPage() {
     }
 
     function handleOpenProjectClick() {
+        const api = flsApiRef.current;
+        const hasWork = !!api && api.getShapes().length > 0;
+        if (hasWork && !window.confirm("Opening another project will discard unsaved changes in the current workspace. Continue?")) {
+            return;
+        }
         openInputRef.current?.click();
     }
 
@@ -345,6 +324,9 @@ function FloorLevelSurveyPage() {
                 }
                 if (Array.isArray(s.materials)) {
                     setMaterials(s.materials as FloorMaterial[]);
+                    setSelectedMaterialIndex(-1);
+                } else {
+                    setMaterials([]);
                     setSelectedMaterialIndex(-1);
                 }
                 if (s.projectInfo) setProjectInfo({ ...emptyProjectInfo(), ...s.projectInfo });
@@ -377,6 +359,7 @@ function FloorLevelSurveyPage() {
                 settings,
                 legendRange: api.getLegendRange(),
                 legendLevels: api.getLegendLevels(),
+                filenameBase: `${(projectInfo.projectNumber || "project").trim()} - FLS ${(projectInfo.projectName || "untitled").trim()}`.replace(/[\\/:*?"<>|]+/g, "_"),
             });
         } catch (err) {
             console.error(err);

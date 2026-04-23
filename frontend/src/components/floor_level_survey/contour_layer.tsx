@@ -1,4 +1,4 @@
-import { Layer, Line, Shape } from "react-konva";
+import { Layer, Shape } from "react-konva";
 import { interpolateContourColor } from "./contour_colors";
 
 
@@ -65,9 +65,9 @@ function ContourLayer({
     lineWidth = 1.2,
     minZ = null,
     maxZ = null,
-    fillOpacity = 0.55,
+    fillOpacity = 1,
     lineOpacity = 0.95,
-    lineTension = 0.5,
+    lineTension = 0,
     showFill = true,
 }: ContourLayerProps) {
     if (!data) return null;
@@ -130,33 +130,37 @@ function ContourLayer({
                 );
             })}
 
-            {lines.map((line, li) => {
-                if (!line || line.length < 2) return null;
-                const pts = ringToFlat(line);
-                if (pts.length < 4) return null;
-                const h = lineHeights[li];
-                const color = showFill && h !== undefined ? colorAtHeight(h) : "#111111";
-                const isClosed =
-                    pts.length >= 6 &&
-                    Math.abs(pts[0] - pts[pts.length - 2]) < 1e-6 &&
-                    Math.abs(pts[1] - pts[pts.length - 1]) < 1e-6;
-                return (
-                    <Line
-                        key={`c-${li}`}
-                        points={pts}
-                        stroke={color}
-                        strokeWidth={lineWidth}
-                        opacity={lineOpacity}
-                        tension={lineTension}
-                        closed={isClosed}
-                        lineCap="round"
-                        lineJoin="round"
-                        perfectDrawEnabled={false}
-                        shadowForStrokeEnabled={false}
-                        hitStrokeWidth={0}
-                    />
-                );
-            })}
+            {/* Draw all contour lines in one canvas pass for performance. */}
+            <Shape
+                listening={false}
+                perfectDrawEnabled={false}
+                sceneFunc={(ctx) => {
+                    const native = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+                    native.save();
+                    native.globalAlpha = lineOpacity;
+                    native.lineWidth = lineWidth;
+                    native.lineCap = "round";
+                    native.lineJoin = "round";
+                    for (let li = 0; li < lines.length; li++) {
+                        const line = lines[li];
+                        if (!line || line.length < 2) continue;
+                        const pts = ringToFlat(line);
+                        if (pts.length < 4) continue;
+                        const h = lineHeights[li];
+                        const color = showFill && h !== undefined ? colorAtHeight(h) : "#111111";
+                        native.beginPath();
+                        native.moveTo(pts[0], pts[1]);
+                        if (lineTension > 0) {
+                            for (let i = 2; i < pts.length; i += 2) native.lineTo(pts[i], pts[i + 1]);
+                        } else {
+                            for (let i = 2; i < pts.length; i += 2) native.lineTo(pts[i], pts[i + 1]);
+                        }
+                        native.strokeStyle = color;
+                        native.stroke();
+                    }
+                    native.restore();
+                }}
+            />
         </Layer>
     );
 }

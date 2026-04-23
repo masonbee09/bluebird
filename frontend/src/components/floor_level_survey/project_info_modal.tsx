@@ -112,7 +112,7 @@ function ProjectInfoModal({ open, value, onClose, onSave }: ProjectInfoModalProp
                                 type="text"
                                 value={draft.companyName}
                                 onChange={e => set("companyName", e.target.value)}
-                                placeholder="e.g. Peterson Geotechnical Group"
+                                placeholder=""
                             />
                         </label>
                     </div>
@@ -163,7 +163,7 @@ function ProjectInfoModal({ open, value, onClose, onSave }: ProjectInfoModalProp
                                 type="text"
                                 value={draft.projectName}
                                 onChange={e => set("projectName", e.target.value)}
-                                placeholder="e.g. K Hovanian"
+                                placeholder=""
                             />
                         </label>
                     </div>
@@ -175,7 +175,7 @@ function ProjectInfoModal({ open, value, onClose, onSave }: ProjectInfoModalProp
                                 value={draft.projectAddress}
                                 onChange={e => set("projectAddress", e.target.value)}
                                 rows={3}
-                                placeholder={"Luke Landing Lot 78\n7449 N 127th Dr\nGlendale, Az"}
+                                placeholder=""
                             />
                         </label>
                     </div>
@@ -187,7 +187,7 @@ function ProjectInfoModal({ open, value, onClose, onSave }: ProjectInfoModalProp
                                 type="text"
                                 value={draft.projectNumber}
                                 onChange={e => set("projectNumber", e.target.value)}
-                                placeholder="e.g. 3329"
+                                placeholder=""
                             />
                         </label>
                         <label className="fls-modal-field">
@@ -196,7 +196,7 @@ function ProjectInfoModal({ open, value, onClose, onSave }: ProjectInfoModalProp
                                 type="text"
                                 value={draft.drawingNumber}
                                 onChange={e => set("drawingNumber", e.target.value)}
-                                placeholder="e.g. Figure 1"
+                                placeholder=""
                             />
                         </label>
                     </div>

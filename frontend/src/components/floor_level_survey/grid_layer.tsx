@@ -36,7 +36,9 @@ function GridLayer({ width, height, scale, offsetX, offsetY, showMajor }: GridLa
     }
 
     const dots: { key: string; x: number; y: number }[] = [];
-    if (scale >= 0.25) {
+    // Dots are useful for precise snapping when zoomed in, but at <=100% they
+    // become visually unstable and expensive to render on dense scenes.
+    if (showMajor && scale > 1.0) {
         const mStart = (v: number) => Math.floor(v / GRID_MINOR) * GRID_MINOR;
         const mEnd = (v: number) => Math.ceil(v / GRID_MINOR) * GRID_MINOR;
 
@@ -45,13 +47,8 @@ function GridLayer({ width, height, scale, offsetX, offsetY, showMajor }: GridLa
         const yStart = mStart(y0) - GRID_MINOR;
         const yEnd = mEnd(y1) + GRID_MINOR;
 
-        const cols = Math.ceil((xEnd - xStart) / GRID_MINOR) + 1;
-        const rows = Math.ceil((yEnd - yStart) / GRID_MINOR) + 1;
-        const projected = cols * rows;
-        const stride = projected > 4000 ? GRID_MAJOR : GRID_MINOR;
-
-        for (let x = xStart; x <= xEnd; x += stride) {
-            for (let y = yStart; y <= yEnd; y += stride) {
+        for (let x = xStart; x <= xEnd; x += GRID_MINOR) {
+            for (let y = yStart; y <= yEnd; y += GRID_MINOR) {
                 dots.push({ key: `d${x}_${y}`, x, y });
             }
         }

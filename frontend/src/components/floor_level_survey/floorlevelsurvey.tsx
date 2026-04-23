@@ -96,7 +96,7 @@ const MAX_SCALE = 20;
 
 function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange, selectedMaterial, showBoundaries = true, backgroundImage, backgroundAdjustMode = false, onBackgroundChange }: FLSProps) {
 
-    const [, setTick] = useState(0);
+    const [tick, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
 
     const [wallPoly, setWallPoly] = useState<{ x: number; y: number }[]>([]);
@@ -151,6 +151,20 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
             })();
         return () => { cancelled = true; };
     }, [solveTrigger, controller]);
+
+    // Any geometry/material edit invalidates previously solved contours.
+    useEffect(() => {
+        if (solveTrigger === undefined || solveTrigger === 0) return;
+        setContourData(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tick]);
+
+    // Spacing changes should invalidate solved contours until the user solves again.
+    const contourSpacingNow = getContourSpacing();
+    useEffect(() => {
+        if (solveTrigger === undefined || solveTrigger === 0) return;
+        setContourData(null);
+    }, [contourSpacingNow, solveTrigger]);
 
 
     // Resize
@@ -340,6 +354,13 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 break;
             }
             case "draw_wall":
+                if (evt.detail >= 2 && wallPoly.length >= 2) {
+                    controller.removeTemporaryShapes();
+                    setWallPoly([]);
+                    lastWallClickRef.current = null;
+                    setTick(t => t + 1);
+                    break;
+                }
                 handleWallClick(pointerPosition.x, pointerPosition.y, evt.altKey);
                 break;
             case "draw_boundary":
@@ -348,6 +369,8 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                         ? snapToGrid(pointerPosition.x, pointerPosition.y)
                         : { x: pointerPosition.x, y: pointerPosition.y };
                     handleBoundaryClick(target.x, target.y);
+                } else {
+                    window.alert("Please define/select a floor material first.");
                 }
                 break;
             case "select": {
@@ -366,16 +389,21 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     };
                     stage.container().style.cursor = "grabbing";
                 } else {
-                    panStateRef.current = {
-                        active: true,
-                        moved: false,
-                        startClientX: evt.clientX,
-                        startClientY: evt.clientY,
-                        startStageX: stage.x(),
-                        startStageY: stage.y(),
-                        triggeredBy: "select",
-                    };
-                    stage.container().style.cursor = "grabbing";
+                    const wallIdx = controller.findWallIndexAt(pointerPosition.x, pointerPosition.y, Math.max(8, 10 / scale));
+                    if (wallIdx !== -1) {
+                        controller.selectShapeByIndex(wallIdx);
+                    } else {
+                        panStateRef.current = {
+                            active: true,
+                            moved: false,
+                            startClientX: evt.clientX,
+                            startClientY: evt.clientY,
+                            startStageX: stage.x(),
+                            startStageY: stage.y(),
+                            triggeredBy: "select",
+                        };
+                        stage.container().style.cursor = "grabbing";
+                    }
                 }
                 break;
         }
@@ -921,10 +949,19 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
     const highLow = (() => {
         let high: PointShape | null = null;
         let low: PointShape | null = null;
+        let highAdj = -Infinity;
+        let lowAdj = Infinity;
         for (const s of controller.shapes) {
             if (s.type !== "point") continue;
-            if (high === null || s.z > high.z) high = s;
-            if (low === null || s.z < low.z) low = s;
+            const adjusted = controller.getAdjustedPointZ(s);
+            if (high === null || adjusted > highAdj) {
+                high = { ...s, z: adjusted };
+                highAdj = adjusted;
+            }
+            if (low === null || adjusted < lowAdj) {
+                low = { ...s, z: adjusted };
+                lowAdj = adjusted;
+            }
         }
         const differential = high && low ? high.z - low.z : null;
         return { high, low, differential };
@@ -1044,10 +1081,19 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
             getHighLow: () => {
                 let high: PointShape | null = null;
                 let low: PointShape | null = null;
+                let highAdj = -Infinity;
+                let lowAdj = Infinity;
                 for (const s of controller.shapes) {
                     if (s.type !== "point") continue;
-                    if (high === null || s.z > high.z) high = s;
-                    if (low === null || s.z < low.z) low = s;
+                    const adjusted = controller.getAdjustedPointZ(s);
+                    if (high === null || adjusted > highAdj) {
+                        high = { ...s, z: adjusted };
+                        highAdj = adjusted;
+                    }
+                    if (low === null || adjusted < lowAdj) {
+                        low = { ...s, z: adjusted };
+                        lowAdj = adjusted;
+                    }
                 }
                 const differential = high && low ? high.z - low.z : null;
                 return { high, low, differential };

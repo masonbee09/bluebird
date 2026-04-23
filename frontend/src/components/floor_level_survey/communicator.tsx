@@ -138,7 +138,9 @@ class Communicator {
             points,
             wall_points,
             heights,
-            resolution: 150,
+            // Slightly reduced grid density for better interactivity while
+            // keeping contours smooth enough for floor surveys.
+            resolution: 120,
         };
     }
 

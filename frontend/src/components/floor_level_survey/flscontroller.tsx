@@ -292,6 +292,10 @@ class FLSController {
         return this.shapes.some(s => s.selected);
     }
 
+    getAdjustedPointZ(point: PointShape): number {
+        return this.getAdjustedZ(point.x, point.y, point.z);
+    }
+
     findWallIndexAt(x: number, y: number, tolerance: number): number {
         let best = -1;
         let bestDist = tolerance;
@@ -441,6 +445,48 @@ class FLSController {
         this.notify();
     }
 
+    selectShapeByIndex(index: number) {
+        if (index < 0 || index >= this.shapes.length) return;
+        const target = this.shapes[index];
+        if (target.type !== "wall" && target.type !== "point") return;
+
+        for (const s of this.shapes) {
+            if (!s.selected) continue;
+            switch (s.type) {
+                case "wall":
+                    s.stroke = wallStyle.stroke;
+                    s.strokeWidth = wallStyle.strokeWidth;
+                    break;
+                case "point":
+                    s.fill = pointStyle.fill;
+                    s.radius = pointStyle.radius;
+                    break;
+                case "label":
+                    s.fill = heightLabelStyle.fill!;
+                    s.stroke = heightLabelStyle.stroke!;
+                    s.strokeWidth = heightLabelStyle.strokeWidth!;
+                    s.draggable = heightLabelStyle.draggable!;
+                    s.fontSize = heightLabelStyle.fontsize!;
+                    s.fontFamily = heightLabelStyle.fontFamily!;
+                    break;
+                case "boundary":
+                    break;
+            }
+            s.selected = false;
+        }
+
+        if (target.type === "point") {
+            this.selectPointByIndex(index);
+            return;
+        }
+
+        target.selected = true;
+        target.stroke = selectedWallStyle.stroke;
+        target.strokeWidth = selectedWallStyle.strokeWidth;
+        this.selectedIndex = index;
+        this.notify();
+    }
+
     snapshotForUndo() {
         this.snapshot();
     }
@@ -471,10 +517,15 @@ class FLSController {
                 case "wall":
                     return (new LineTool).create(shape.points, shape.stroke, shape.strokeWidth);
                 case "label":
+                    const tiedPoint = this.shapes.find(
+                        (other): other is PointShape => other.type === "point" && other.tieid === shape.tieid,
+                    );
+                    const adjusted = tiedPoint ? this.getAdjustedZ(tiedPoint.x, tiedPoint.y, tiedPoint.z) : shape.z;
+                    const labelText = adjusted.toFixed(1);
                     return (new TextTool).create(
                         shape.x,
                         shape.y,
-                        shape.text,
+                        labelText,
                         shape.fontSize,
                         shape.fill,
                         shape.draggable,

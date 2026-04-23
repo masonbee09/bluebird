@@ -49,27 +49,32 @@ export function hslToHex(h: number, s: number, l: number): string {
 }
 
 
-// Long-way HSL interpolation between two hex colors. This produces a natural
-// rainbow sweep when the two endpoints are far apart on the color wheel (e.g.
-// blue -> red goes through cyan, green, yellow instead of through purple).
+function hexToRgb(hex: string): [number, number, number] {
+    let clean = hex.trim();
+    if (clean.startsWith("#")) clean = clean.slice(1);
+    if (clean.length === 3) clean = clean.split("").map(c => c + c).join("");
+    if (clean.length !== 6) return [0, 0, 0];
+    return [
+        parseInt(clean.slice(0, 2), 16),
+        parseInt(clean.slice(2, 4), 16),
+        parseInt(clean.slice(4, 6), 16),
+    ];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+    const toHex = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+
+// Linear RGB interpolation:
+// c = c1 + (c2 - c1) * t
 export function interpolateContourColor(startHex: string, endHex: string, t: number): string {
     const clampedT = Math.max(0, Math.min(1, t));
-    const [h1, s1, l1] = hexToHsl(startHex);
-    const [h2, s2, l2] = hexToHsl(endHex);
-
-    const forward = ((h2 - h1) % 360 + 360) % 360;
-    const backward = 360 - forward;
-
-    let hue: number;
-    if (forward === 0 && backward === 360) {
-        hue = h1;
-    } else if (forward >= backward) {
-        hue = h1 + forward * clampedT;
-    } else {
-        hue = h1 - backward * clampedT;
-    }
-
-    const s = s1 + (s2 - s1) * clampedT;
-    const l = l1 + (l2 - l1) * clampedT;
-    return hslToHex(hue, s, l);
+    const [r1, g1, b1] = hexToRgb(startHex);
+    const [r2, g2, b2] = hexToRgb(endHex);
+    const r = r1 + (r2 - r1) * clampedT;
+    const g = g1 + (g2 - g1) * clampedT;
+    const b = b1 + (b2 - b1) * clampedT;
+    return rgbToHex(r, g, b);
 }

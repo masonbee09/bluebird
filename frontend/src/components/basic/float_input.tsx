@@ -6,6 +6,7 @@ import "./int_input.css"
 
 interface FloatInputState {
     value: string;
+    focused: boolean;
 }
 
 
@@ -36,17 +37,22 @@ class FloatInput extends Component<FloatInputProps, FloatInputState> {
         placeHolder: "Enter Value"
     }
     state: FloatInputState = {
-        value: formatExternalValue((undefined as unknown) as number | null)
+        value: formatExternalValue((undefined as unknown) as number | null),
+        focused: false,
     }
 
     constructor(props: FloatInputProps) {
         super(props);
-        this.state = { value: formatExternalValue(props.value) };
+        this.state = { value: formatExternalValue(props.value), focused: false };
     }
 
     componentDidUpdate(prevProps: FloatInputProps) {
         if (prevProps.value !== this.props.value) {
             const next = formatExternalValue(this.props.value);
+            // While the user is actively typing partial float forms (e.g. "0.")
+            // keep the in-progress text and don't force-normalize from parent.
+            const inProgress = this.state.value === '-' || this.state.value === '.' || this.state.value === '-.' || this.state.value.endsWith('.');
+            if (this.state.focused && inProgress) return;
             if (next !== this.state.value) {
                 this.setState({ value: next });
             }
@@ -72,6 +78,28 @@ class FloatInput extends Component<FloatInputProps, FloatInputState> {
         }
     };
 
+    handleFocus = () => {
+        this.setState({ focused: true });
+    };
+
+    handleBlur = () => {
+        const { onChange } = this.props;
+        const raw = this.state.value.trim();
+        let normalized = raw;
+        if (raw === ".") normalized = "0.";
+        else if (raw === "-.") normalized = "-0.";
+        else if (raw.startsWith(".")) normalized = `0${raw}`;
+        else if (raw.startsWith("-.")) normalized = `-0${raw.slice(1)}`;
+        const numericValue = normalized === '' || normalized === '-' || normalized === '.' || normalized === '-.'
+            ? null
+            : Number(normalized);
+        const renderValue = Number.isFinite(numericValue as number)
+            ? formatExternalValue(numericValue as number)
+            : '';
+        this.setState({ value: renderValue, focused: false });
+        if (onChange) onChange(Number.isFinite(numericValue as number) ? (numericValue as number) : null);
+    };
+
     render() {
         const {text, cssClass, placeHolder, style} = this.props;
 
@@ -81,7 +109,9 @@ class FloatInput extends Component<FloatInputProps, FloatInputState> {
             <input
             type="text" // Use type="text" and regex validation for stricter control over input characters
             value={this.state.value}
-            onChange={this.handleChange} 
+            onChange={this.handleChange}
+            onFocus={this.handleFocus}
+            onBlur={this.handleBlur}
             placeholder={placeHolder}
             style={style}
             className={cssClass}
