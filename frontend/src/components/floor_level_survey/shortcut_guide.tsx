@@ -38,7 +38,7 @@ const groups: { title: string; items: GroupedShortcut[] }[] = [
         items: [
             { keys: ["Click"], label: "Place a point (free position)" },
             { keys: ["Alt", "+", "Click"], label: "Place a point snapped to the grid" },
-            { keys: ["Click"], label: "Place a wall corner (always snaps to grid)" },
+            { keys: ["Click"], label: "Place a wall corner (free; Alt = snap to grid)" },
             { keys: ["Double-click"], label: "Finish wall polygon" },
             { keys: ["Click"], label: "On existing point: selects it instead of adding" },
             { keys: ["Click"], label: "Boundary: place a polygon vertex (free, Alt=snap)" },

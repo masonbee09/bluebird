@@ -23,6 +23,8 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 import ContourLayer, { type ContourData } from "./contour_layer";
 import ContourLegend from "./contour_legend";
+import BackgroundImageLayer from "./background_image_layer";
+import type { FLSBackgroundImage } from "./project_io";
 import "./floorlevelsurvey.css";
 
 
@@ -79,6 +81,12 @@ interface FLSProps {
     selectedMaterial?: FloorMaterial | null;
     /** Whether the floor material boundary regions layer is visible. Default true. */
     showBoundaries?: boolean;
+    /** Optional background tracing image (e.g. rasterised hand-drawn survey PDF). */
+    backgroundImage?: FLSBackgroundImage | null;
+    /** When true, the background image becomes draggable / transformable. */
+    backgroundAdjustMode?: boolean;
+    /** Called when the user drags or transforms the background image. */
+    onBackgroundChange?: (patch: Partial<FLSBackgroundImage>) => void;
 }
 
 
@@ -86,7 +94,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange, selectedMaterial, showBoundaries = true }: FLSProps) {
+function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange, selectedMaterial, showBoundaries = true, backgroundImage, backgroundAdjustMode = false, onBackgroundChange }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -221,8 +229,9 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
     const DBL_CLICK_MS = 300;
     const DBL_CLICK_DIST = 6;
 
-    const handleWallClick = (wx: number, wy: number) => {
-        const snapped = snapToGrid(wx, wy);
+    const handleWallClick = (wx: number, wy: number, alt: boolean) => {
+        // Free by default; snap to the nearest grid dot only when Alt is held.
+        const snapped = alt ? snapToGrid(wx, wy) : { x: wx, y: wy };
 
         const last = lastWallClickRef.current;
         const now = Date.now();
@@ -331,7 +340,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 break;
             }
             case "draw_wall":
-                handleWallClick(pointerPosition.x, pointerPosition.y);
+                handleWallClick(pointerPosition.x, pointerPosition.y, evt.altKey);
                 break;
             case "draw_boundary":
                 if (selectedMaterial) {
@@ -419,11 +428,14 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
 
         if (tool === "draw_wall" && wallPoly.length > 0) {
             const prev = wallPoly[wallPoly.length - 1];
-            const snapped = snapToGrid(pointerPosition.x, pointerPosition.y);
+            // Free by default; Alt to snap — matches click-time behaviour.
+            const target = evt.altKey
+                ? snapToGrid(pointerPosition.x, pointerPosition.y)
+                : { x: pointerPosition.x, y: pointerPosition.y };
             controller.removeTemporaryShapes();
             controller.shapes.push({
                 type: "wall",
-                points: [prev.x, prev.y, snapped.x, snapped.y],
+                points: [prev.x, prev.y, target.x, target.y],
                 stroke: wallStyle.stroke,
                 strokeWidth: wallStyle.strokeWidth,
                 temporary: true,
@@ -1113,6 +1125,14 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 onMouseLeave={handleMouseUp}
                 onContextMenu={handleContextMenu}
                 onWheel={handleWheel}>
+
+                {/* Tracing reference image (hand-drawn survey PDF / photo) — below the grid so
+                    grid dots remain visible on top for precise snapping. */}
+                <BackgroundImageLayer
+                    background={backgroundImage ?? null}
+                    adjustMode={backgroundAdjustMode}
+                    onChange={patch => onBackgroundChange?.(patch)}
+                />
 
                 <GridLayer
                     width={stageDimensions.width}

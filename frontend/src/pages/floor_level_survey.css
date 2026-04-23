@@ -159,12 +159,23 @@
     flex: 0 0 auto;
     display: flex;
     align-items: stretch;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 10px 16px;
     padding: 10px 16px;
     background-color: var(--color-surface);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -1px 2px rgba(15, 23, 42, 0.04);
     color: var(--color-text);
+    /* If we still overflow on extremely narrow viewports, scroll horizontally
+       rather than clip controls off the edge. */
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.fls-bottom-bar::-webkit-scrollbar { height: 6px; }
+.fls-bottom-bar::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border-radius: 3px;
 }
 
 .fls-bottom-group {
@@ -214,7 +225,8 @@
 }
 
 .fls-bottom-spacer {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .fls-bottom-hint {
@@ -223,7 +235,33 @@
     font-size: 11.5px;
     line-height: 1.5;
     max-width: 360px;
+    min-width: 0;
     text-align: right;
+    margin-left: auto;
+}
+
+/* Dividers: on tight layouts, hide them so wrapping rows don't start with a
+   stray vertical line. */
+@media (max-width: 1280px) {
+    .fls-bottom-divider { display: none; }
+    .fls-bottom-spacer { display: none; }
+    .fls-bottom-hint { max-width: 100%; text-align: left; margin-left: 0; }
+}
+
+@media (max-width: 900px) {
+    .fls-bottom-bar { padding: 8px 12px; gap: 8px 12px; }
+    .fls-bottom-group-content { gap: 8px; }
+    .fls-bottom-hint { display: none; }
+}
+
+/* Very narrow screens: shrink toolstrip and hide its text labels so the
+   canvas still has room to breathe. */
+@media (max-width: 720px) {
+    .fls-toolstrip { width: 52px; padding: 8px 4px; }
+    .fls-toolstrip-btn { width: 44px; min-height: 44px; padding: 4px 2px; }
+    .fls-toolstrip-label { display: none; }
+    .fls-toolstrip-shortcut { font-size: 8px; top: 2px; right: 2px; }
+    .fls-canvas-host { padding: 8px 8px 6px; }
 }
 
 .fls-bottom-hint kbd {
@@ -473,3 +511,163 @@
     margin-left: auto;
     padding-left: 2px;
 }
+
+/* ── Trace Background (PDF / image reference) ──────────── */
+
+.fls-trace-group {
+    flex-shrink: 0;
+}
+
+.fls-trace-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.fls-trace-import-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border: 1.5px dashed var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: transparent;
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-text-subtle);
+    transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+}
+
+.fls-trace-import-btn:hover:not(:disabled) {
+    border-color: var(--color-accent, #2563eb);
+    color: var(--color-accent, #2563eb);
+    background-color: #eff6ff;
+}
+
+.fls-trace-import-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.fls-trace-opacity-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 6px;
+    height: 26px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: #fff;
+}
+
+.fls-trace-opacity-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+}
+
+.fls-trace-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 85px;
+    height: 4px;
+    border-radius: 4px;
+    background: #e2e8f0;
+    outline: none;
+    cursor: pointer;
+}
+
+.fls-trace-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--color-accent, #2563eb);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+}
+
+.fls-trace-slider::-moz-range-thumb {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--color-accent, #2563eb);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+}
+
+.fls-trace-opacity-val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: var(--color-text-muted);
+    min-width: 28px;
+    text-align: right;
+}
+
+.fls-trace-mode-btn {
+    padding: 4px 10px;
+    border: 1.5px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: #fff;
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-text);
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.fls-trace-mode-btn:hover {
+    border-color: var(--color-accent, #2563eb);
+    color: var(--color-accent, #2563eb);
+}
+
+.fls-trace-mode-btn.is-active {
+    background: var(--color-accent, #2563eb);
+    color: #fff;
+    border-color: var(--color-accent, #2563eb);
+}
+
+.fls-trace-replace-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: #fff;
+    cursor: pointer;
+    font-size: 11.5px;
+    color: var(--color-text-muted);
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.fls-trace-replace-btn:hover:not(:disabled) {
+    background-color: #f1f5f9;
+    color: var(--color-text);
+}
+
+.fls-trace-remove-btn {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: #fff;
+    font-size: 15px;
+    line-height: 1;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.fls-trace-remove-btn:hover {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border-color: #fecaca;
+}
+ 

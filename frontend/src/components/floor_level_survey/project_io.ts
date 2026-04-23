@@ -11,6 +11,39 @@ export const FLS_PROJECT_VERSION = 2;
 export type PdfOrientation = "auto" | "portrait" | "landscape";
 
 
+/**
+ * A rasterised reference image (typically the first page of a hand-drawn
+ * survey PDF) displayed faintly behind the drawing so the user can trace
+ * lines and points on top of it.
+ *
+ * All geometric fields are in world / canvas units (same space as shapes).
+ */
+export interface FLSBackgroundImage {
+    /** PNG/JPEG data URL — inline so the image round-trips with saved projects. */
+    dataUrl: string;
+    /** World-space X of the image's top-left corner. */
+    x: number;
+    /** World-space Y of the image's top-left corner. */
+    y: number;
+    /** World-space width. */
+    width: number;
+    /** World-space height. */
+    height: number;
+    /** Rotation in degrees. */
+    rotation: number;
+    /** Display opacity 0–1. */
+    opacity: number;
+    /** Whether the background layer is visible. */
+    visible: boolean;
+    /** Locked = can't be dragged/transformed (normal tracing mode). */
+    locked: boolean;
+    /** Original raster pixel width (for reference / restoring aspect ratio). */
+    naturalWidth: number;
+    /** Original raster pixel height. */
+    naturalHeight: number;
+}
+
+
 export interface FLSProjectSettings {
     contourSpacing: number | null;
     pointHeight: number | null;
@@ -22,6 +55,7 @@ export interface FLSProjectSettings {
     pdfOrientation?: PdfOrientation;
     materials?: FloorMaterial[];
     projectInfo?: FLSProjectInfo;
+    backgroundImage?: FLSBackgroundImage | null;
 }
 
 
@@ -135,6 +169,10 @@ function validateProject(obj: unknown): FLSProjectFile {
         projectInfo: rawSettings.projectInfo
             ? { ...emptyProjectInfo(), ...rawSettings.projectInfo }
             : emptyProjectInfo(),
+        backgroundImage: (rawSettings.backgroundImage
+            && typeof rawSettings.backgroundImage === "object"
+            && typeof (rawSettings.backgroundImage as FLSBackgroundImage).dataUrl === "string"
+        ) ? rawSettings.backgroundImage : null,
     };
     return {
         schema: FLS_PROJECT_SCHEMA,

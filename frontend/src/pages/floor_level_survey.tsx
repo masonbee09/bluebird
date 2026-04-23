@@ -19,13 +19,16 @@ import {
     exportCanvasAsPDF,
     type FLSProjectSettings,
     type PdfOrientation,
+    type FLSBackgroundImage,
 } from "../components/floor_level_survey/project_io";
+import { importBackgroundFile } from "../components/floor_level_survey/pdf_to_image";
 import type { FloorMaterial } from "../components/floor_level_survey/shape_types";
 import ProjectInfoModal, {
     emptyProjectInfo,
     type FLSProjectInfo,
 } from "../components/floor_level_survey/project_info_modal";
 import MaterialDialog from "../components/floor_level_survey/material_dialog";
+import PdfExportModal from "../components/floor_level_survey/pdf_export_modal";
 import type { PointShape, Tool } from "../components/floor_level_survey/shape_types";
 import "./div_types.css";
 import "./floor_level_survey.css";
@@ -111,6 +114,22 @@ function FloorLevelSurveyPage() {
     const [lowPoint, setLowPoint] = useState<PointShape | null>(null);
     const [differential, setDifferential] = useState<number | null>(null);
 
+    // Tracing reference image (hand-drawn survey PDF / photo)
+    const [backgroundImage, setBackgroundImage] = useState<FLSBackgroundImage | null>(() => {
+        try {
+            const raw = localStorage.getItem("fls.backgroundImage");
+            return raw ? JSON.parse(raw) as FLSBackgroundImage : null;
+        } catch { return null; }
+    });
+    const [bgAdjustMode, setBgAdjustMode] = useState<boolean>(false);
+    const [bgImporting, setBgImporting] = useState<boolean>(false);
+    const bgFileInputRef = useRef<HTMLInputElement | null>(null);
+    const [pdfDialogOpen, setPdfDialogOpen] = useState<boolean>(false);
+
+    // Track whether a contour solve has ever succeeded. Used to decide
+    // whether "Contour spacing" changes should auto re-solve.
+    const hasSolvedRef = useRef<boolean>(false);
+
     useEffect(() => {
         try { localStorage.setItem("fls.contourStartColor", contourStartColor); } catch { /* ignore */ }
     }, [contourStartColor]);
@@ -132,6 +151,20 @@ function FloorLevelSurveyPage() {
     useEffect(() => {
         try { localStorage.setItem("fls.materials", JSON.stringify(materials)); } catch { /* ignore */ }
     }, [materials]);
+
+    // Automatically exit "Adjust background" mode when the user switches to
+    // any drawing tool. Otherwise the Transformer on the background image
+    // would hijack mouse events over the image's bounding rectangle and the
+    // picture would follow the pointer while the user tries to trace.
+    useEffect(() => {
+        if (tool !== "select" && bgAdjustMode) setBgAdjustMode(false);
+    }, [tool, bgAdjustMode]);
+    useEffect(() => {
+        try {
+            if (backgroundImage) localStorage.setItem("fls.backgroundImage", JSON.stringify(backgroundImage));
+            else localStorage.removeItem("fls.backgroundImage");
+        } catch { /* may exceed quota for huge images; non-fatal */ }
+    }, [backgroundImage]);
 
     const selectedMaterial: FloorMaterial | null =
         selectedMaterialIndex >= 0 && selectedMaterialIndex < materials.length
@@ -159,8 +192,76 @@ function FloorLevelSurveyPage() {
         else if (selectedMaterialIndex > index) setSelectedMaterialIndex(prev => prev - 1);
     }
 
-    const giveContourSpacing = () => contourSpacing ?? 0.1;
-    const givePointHeight = () => pointHeight ?? 0.0;
+    /* ── Background tracing image ───────────────────────── */
+
+    function handleImportBackgroundClick() {
+        bgFileInputRef.current?.click();
+    }
+
+    async function handleImportBackgroundFile(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+        setBgImporting(true);
+        try {
+            const raster = await importBackgroundFile(file);
+            // Default placement: fit a generous, always-visible size, regardless
+            // of the source resolution. Longest side = 600 world units
+            // (i.e. ~30 major grid squares — big enough to see immediately on
+            // any viewport, small enough to still fit on screen).
+            const rasterW = Math.max(1, raster.width);
+            const rasterH = Math.max(1, raster.height);
+            const targetLongestPx = 600;
+            const longestPx = Math.max(rasterW, rasterH);
+            const worldScale = targetLongestPx / longestPx;
+            const w = rasterW * worldScale;
+            const h = rasterH * worldScale;
+            setBackgroundImage({
+                dataUrl: raster.dataUrl,
+                x: -w / 2,
+                y: -h / 2,
+                width: w,
+                height: h,
+                rotation: 0,
+                opacity: 0.35,
+                visible: true,
+                locked: true,
+                naturalWidth: rasterW,
+                naturalHeight: rasterH,
+            });
+            // Open in adjust mode so the user can position it immediately.
+            // (Switching to a drawing tool will automatically exit adjust mode.)
+            setTool("select");
+            setBgAdjustMode(true);
+        } catch (err) {
+            console.error(err);
+            const message = err instanceof Error ? err.message : "Could not import the file.";
+            window.alert(`Background import failed: ${message}`);
+        } finally {
+            setBgImporting(false);
+        }
+    }
+
+    const handleBackgroundPatch = useCallback((patch: Partial<FLSBackgroundImage>) => {
+        setBackgroundImage(prev => prev ? { ...prev, ...patch } : prev);
+    }, []);
+
+    function handleRemoveBackground() {
+        if (!backgroundImage) return;
+        if (!window.confirm("Remove the tracing background image?")) return;
+        setBackgroundImage(null);
+        setBgAdjustMode(false);
+    }
+
+    // The FLS canvas captures these callbacks only on its first render (via
+    // useState), so we need stable identities that always return the latest
+    // values. A ref is the simplest way to bridge this.
+    const contourSpacingRef = useRef<number>(contourSpacing ?? 0.1);
+    useEffect(() => { contourSpacingRef.current = contourSpacing ?? 0.1; }, [contourSpacing]);
+    const pointHeightRef = useRef<number>(pointHeight ?? 0.0);
+    useEffect(() => { pointHeightRef.current = pointHeight ?? 0.0; }, [pointHeight]);
+    const giveContourSpacing = useCallback(() => contourSpacingRef.current, []);
+    const givePointHeight = useCallback(() => pointHeightRef.current, []);
 
     const flsApiRef = useRef<FLSApi | null>(null);
     const openInputRef = useRef<HTMLInputElement | null>(null);
@@ -170,11 +271,25 @@ function FloorLevelSurveyPage() {
         setHighPoint(high);
         setLowPoint(low);
         setDifferential(diff);
+        // Contour data has just arrived — remember that we've solved at least
+        // once, so the spacing field can auto re-solve on subsequent edits.
+        if (diff !== null) hasSolvedRef.current = true;
     }, []);
 
     function triggerSolve() {
         setSolveTrigger(prev => prev + 1);
     }
+
+    // Auto-re-solve when the contour spacing changes, but only if we already
+    // have a computed contour — otherwise users shouldn't have the initial
+    // typing recompute on every keystroke before they've pressed Solve.
+    useEffect(() => {
+        if (!hasSolvedRef.current) return;
+        const spacing = contourSpacing ?? 0.1;
+        if (!isFinite(spacing) || spacing <= 0) return;
+        const t = setTimeout(() => { triggerSolve(); }, 350);
+        return () => clearTimeout(t);
+    }, [contourSpacing]);
 
     function currentSettings(): FLSProjectSettings {
         return {
@@ -188,6 +303,7 @@ function FloorLevelSurveyPage() {
             pdfOrientation,
             materials,
             projectInfo,
+            backgroundImage,
         };
     }
 
@@ -232,6 +348,8 @@ function FloorLevelSurveyPage() {
                     setSelectedMaterialIndex(-1);
                 }
                 if (s.projectInfo) setProjectInfo({ ...emptyProjectInfo(), ...s.projectInfo });
+                setBackgroundImage(s.backgroundImage ?? null);
+                setBgAdjustMode(false);
             }
         } catch (err) {
             console.error(err);
@@ -240,7 +358,7 @@ function FloorLevelSurveyPage() {
         }
     }
 
-    function handleExportPDF() {
+    function handleExportPDF(orientationOverride?: PdfOrientation) {
         const api = flsApiRef.current;
         if (!api) return;
         try {
@@ -249,12 +367,14 @@ function FloorLevelSurveyPage() {
                 window.alert("Canvas is not ready for export yet.");
                 return;
             }
+            const settings = currentSettings();
+            if (orientationOverride) settings.pdfOrientation = orientationOverride;
             exportCanvasAsPDF({
                 dataUrl: img.dataUrl,
                 stageWidth: img.width,
                 stageHeight: img.height,
                 shapes: api.getShapes(),
-                settings: currentSettings(),
+                settings,
                 legendRange: api.getLegendRange(),
                 legendLevels: api.getLegendLevels(),
             });
@@ -262,6 +382,12 @@ function FloorLevelSurveyPage() {
             console.error(err);
             window.alert("Failed to export PDF.");
         }
+    }
+
+    function handlePdfExportConfirm(orientation: PdfOrientation) {
+        setPdfOrientation(orientation);
+        setPdfDialogOpen(false);
+        handleExportPDF(orientation);
     }
 
     const contourGradientCss = useMemo(() => {
@@ -299,7 +425,7 @@ function FloorLevelSurveyPage() {
                 <button
                     type="button"
                     className="fls-toolstrip-btn"
-                    onClick={handleExportPDF}
+                    onClick={() => setPdfDialogOpen(true)}
                     title="Export as PDF"
                     aria-label="Export as PDF">
                     <PdfIcon />
@@ -389,6 +515,9 @@ function FloorLevelSurveyPage() {
                         onHighLowChange={handleHighLowChange}
                         selectedMaterial={selectedMaterial}
                         showBoundaries={showBoundaries}
+                        backgroundImage={backgroundImage}
+                        backgroundAdjustMode={bgAdjustMode}
+                        onBackgroundChange={handleBackgroundPatch}
                     />
                 </main>
 
@@ -400,7 +529,11 @@ function FloorLevelSurveyPage() {
                                 <FloatInput text="Point height" value={pointHeight} onChange={setPointHeight} />
                             </div>
                             <div className="fls-bottom-field">
-                                <FloatInput text="Contour spacing" onChange={setContourSpacing} />
+                                <FloatInput
+                                    text="Contour spacing"
+                                    value={contourSpacing}
+                                    onChange={setContourSpacing}
+                                />
                             </div>
                         </div>
                     </div>
@@ -518,30 +651,88 @@ function FloorLevelSurveyPage() {
 
                     <div className="fls-bottom-divider" />
 
-                    <div className="fls-bottom-group">
-                        <div className="fls-bottom-group-title">PDF Layout</div>
-                        <div className="fls-bottom-group-content">
-                            <div
-                                className="fls-segmented"
-                                role="radiogroup"
-                                aria-label="PDF orientation">
-                                {(["auto", "portrait", "landscape"] as const).map(opt => (
+                    {/* ── Tracing background (hand-drawn survey PDF / photo) ───── */}
+                    <div className="fls-bottom-group fls-trace-group">
+                        <div className="fls-bottom-group-title">Trace Background</div>
+                        <div className="fls-bottom-group-content fls-trace-row">
+                            {!backgroundImage ? (
+                                <button
+                                    type="button"
+                                    className="fls-trace-import-btn"
+                                    onClick={handleImportBackgroundClick}
+                                    disabled={bgImporting}
+                                    title="Import a PDF or image of your hand-drawn survey to trace over">
+                                    {bgImporting ? "Loading…" : "Import PDF / Image"}
+                                </button>
+                            ) : (
+                                <>
+                                    <label
+                                        className="fls-view-toggle"
+                                        title={backgroundImage.visible ? "Hide tracing image" : "Show tracing image"}>
+                                        <input
+                                            type="checkbox"
+                                            className="fls-switch-input"
+                                            checked={backgroundImage.visible}
+                                            onChange={e => handleBackgroundPatch({ visible: e.target.checked })}
+                                        />
+                                        <span className="fls-switch-track" aria-hidden="true" />
+                                        <span className="fls-view-toggle-label">Show</span>
+                                    </label>
+
+                                    <label className="fls-trace-opacity-field" title="Background opacity">
+                                        <span className="fls-trace-opacity-label">α</span>
+                                        <input
+                                            type="range"
+                                            min="0.05"
+                                            max="1"
+                                            step="0.05"
+                                            className="fls-trace-slider"
+                                            value={backgroundImage.opacity}
+                                            onChange={e => handleBackgroundPatch({ opacity: parseFloat(e.target.value) })}
+                                        />
+                                        <span className="fls-trace-opacity-val">
+                                            {backgroundImage.opacity.toFixed(2)}
+                                        </span>
+                                    </label>
+
                                     <button
-                                        key={opt}
                                         type="button"
-                                        role="radio"
-                                        aria-checked={pdfOrientation === opt}
-                                        className={`fls-segmented-btn${pdfOrientation === opt ? " is-active" : ""}`}
-                                        onClick={() => setPdfOrientation(opt)}
-                                        title={`Export PDF in ${opt} layout`}>
-                                        {opt === "auto"
-                                            ? "Auto"
-                                            : opt === "portrait"
-                                                ? "Portrait"
-                                                : "Landscape"}
+                                        className={`fls-trace-mode-btn${bgAdjustMode ? " is-active" : ""}`}
+                                        onClick={() => {
+                                            if (!bgAdjustMode) setTool("select");
+                                            setBgAdjustMode(v => !v);
+                                        }}
+                                        title={bgAdjustMode
+                                            ? "Lock background (exit adjust mode)"
+                                            : "Adjust background (drag / resize / rotate)"}>
+                                        {bgAdjustMode ? "Done" : "Adjust"}
                                     </button>
-                                ))}
-                            </div>
+
+                                    <button
+                                        type="button"
+                                        className="fls-trace-replace-btn"
+                                        onClick={handleImportBackgroundClick}
+                                        disabled={bgImporting}
+                                        title="Replace with another file">
+                                        Replace
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="fls-trace-remove-btn"
+                                        onClick={handleRemoveBackground}
+                                        title="Remove background image">
+                                        ×
+                                    </button>
+                                </>
+                            )}
+                            <input
+                                ref={bgFileInputRef}
+                                type="file"
+                                accept="application/pdf,image/*,.pdf"
+                                onChange={handleImportBackgroundFile}
+                                style={{ display: "none" }}
+                            />
                         </div>
                     </div>
 
@@ -558,6 +749,14 @@ function FloorLevelSurveyPage() {
                 value={projectInfo}
                 onClose={() => setProjectInfoOpen(false)}
                 onSave={setProjectInfo}
+            />
+
+            <PdfExportModal
+                open={pdfDialogOpen}
+                orientation={pdfOrientation}
+                onChangeOrientation={setPdfOrientation}
+                onClose={() => setPdfDialogOpen(false)}
+                onExport={handlePdfExportConfirm}
             />
 
             <MaterialDialog
