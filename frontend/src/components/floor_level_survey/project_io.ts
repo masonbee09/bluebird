@@ -354,6 +354,25 @@ function drawLegendCell(
 }
 
 
+/** Draw centered multi-line text; `lines` are baselines relative to `y0` (downward). */
+function drawCenteredLines(
+    pdf: jsPDF,
+    cx: number,
+    lines: string[],
+    y0: number,
+    lineHeight: number,
+    maxWidth: number,
+) {
+    let y = y0;
+    for (const line of lines) {
+        if (line.length > 0) {
+            pdf.text(line, cx, y, { align: "center", maxWidth });
+        }
+        y += lineHeight;
+    }
+}
+
+
 function drawTitleCell(
     pdf: jsPDF,
     x: number,
@@ -362,56 +381,73 @@ function drawTitleCell(
     h: number,
     info: FLSProjectInfo,
 ) {
-    const titleRowH = h * 0.44;
-    const detailRowH = h * 0.30;
+    const padX = 3;
+    const halfW = Math.max(16, (w - padX * 2) / 2);
+    const leftCx = x + padX + halfW / 2;
+    const rightCx = x + padX + halfW + halfW / 2;
+
+    const titleRowH = Math.max(h * 0.42, 46);
+    const detailRowH = Math.max(h * 0.34, 40);
+    const bottomH = h - titleRowH - detailRowH;
 
     pdf.setDrawColor(30);
     pdf.setLineWidth(0.5);
     pdf.line(x, y + titleRowH, x + w, y + titleRowH);
     pdf.line(x, y + titleRowH + detailRowH, x + w, y + titleRowH + detailRowH);
 
+    // Title: two lines need more than ~14pt separation when using 14pt font (was overlapping).
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(14);
+    pdf.setFontSize(10);
     pdf.setTextColor(20);
-    pdf.text("Floor Level", x + w / 2, y + titleRowH / 2 - 2, { align: "center" });
-    pdf.text("Survey", x + w / 2, y + titleRowH / 2 + 12, { align: "center" });
+    const titleLineH = 11;
+    const titleBlockH = titleLineH * 2 + 4;
+    const titleStartY = y + (titleRowH - titleBlockH) / 2 + titleLineH - 2;
+    pdf.text("Floor Level", x + w / 2, titleStartY, { align: "center", maxWidth: w - padX * 2 });
+    pdf.text("Survey", x + w / 2, titleStartY + titleLineH, { align: "center", maxWidth: w - padX * 2 });
 
     const midTop = y + titleRowH;
-    const midMid = midTop + detailRowH / 2;
     pdf.line(x + w / 2, midTop, x + w / 2, midTop + detailRowH);
-    pdf.line(x, midMid, x + w, midMid);
+
+    const labelSize = 7;
+    const innerPad = 4;
+    const colMax = halfW - innerPad * 2;
 
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
+    pdf.setFontSize(labelSize);
     pdf.setTextColor(20);
-    pdf.text("Project:", x + w / 4, midTop + detailRowH / 4 + 3, { align: "center" });
-    pdf.text("Date:", x + (3 * w) / 4, midTop + detailRowH / 4 + 3, { align: "center" });
+    const labelY = midTop + 9;
+    pdf.text("Project:", leftCx, labelY, { align: "center", maxWidth: colMax });
+    pdf.text("Date:", rightCx, labelY, { align: "center", maxWidth: colMax });
 
+    const projRaw = info.projectNumber || "—";
+    const dateRaw = formatProjectDateShort(info.surveyDate);
+
+    let valueSize = 8;
+    let valueLineH = 9;
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(11);
-    pdf.text(
-        info.projectNumber || "—",
-        x + w / 4,
-        midMid + detailRowH / 4 + 3,
-        { align: "center" },
-    );
-    pdf.text(
-        formatProjectDateShort(info.surveyDate),
-        x + (3 * w) / 4,
-        midMid + detailRowH / 4 + 3,
-        { align: "center" },
-    );
+    pdf.setFontSize(valueSize);
+    let projLines = pdf.splitTextToSize(projRaw, colMax);
+    let dateLines = pdf.splitTextToSize(dateRaw, colMax);
+    let valueY = midTop + 18;
+    const maxLines = Math.max(projLines.length, dateLines.length);
+    if (valueY + maxLines * valueLineH > midTop + detailRowH - 2) {
+        valueSize = 7;
+        valueLineH = 8;
+        pdf.setFontSize(valueSize);
+        projLines = pdf.splitTextToSize(projRaw, colMax);
+        dateLines = pdf.splitTextToSize(dateRaw, colMax);
+        valueY = midTop + 17;
+    }
+    drawCenteredLines(pdf, leftCx, projLines, valueY, valueLineH, colMax);
+    drawCenteredLines(pdf, rightCx, dateLines, valueY, valueLineH, colMax);
 
     const bottomTop = y + titleRowH + detailRowH;
-    const bottomH = h - titleRowH - detailRowH;
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(11);
-    pdf.text(
-        info.drawingNumber || "Figure 1",
-        x + w / 2,
-        bottomTop + bottomH / 2 + 3,
-        { align: "center" },
-    );
+    pdf.setFontSize(Math.min(9, bottomH > 22 ? 9 : 8));
+    const figLines = pdf.splitTextToSize(info.drawingNumber || "Figure 1", w - padX * 2);
+    const figLineH = bottomH > 26 ? 10 : 9;
+    const figStart = bottomTop + (bottomH - figLines.length * figLineH) / 2 + figLineH - 2;
+    drawCenteredLines(pdf, x + w / 2, figLines, figStart, figLineH, w - padX * 2);
 }
 
 
@@ -483,20 +519,39 @@ function drawAddressCell(
 
     if (lines.length === 0) {
         pdf.setFont("helvetica", "italic");
-        pdf.setFontSize(10);
+        pdf.setFontSize(8);
         pdf.setTextColor(130);
-        pdf.text("No project name or address", x + w / 2, y + h / 2, { align: "center" });
+        pdf.text("No project name or address", x + w / 2, y + h / 2, { align: "center", maxWidth: w - 10 });
         return;
     }
 
+    const maxW = Math.max(24, w - 14);
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(11);
     pdf.setTextColor(20);
-    const lineHeight = 14;
-    const totalH = lines.length * lineHeight;
-    let textY = y + (h - totalH) / 2 + lineHeight - 3;
-    for (const line of lines) {
-        pdf.text(line, x + w / 2, textY, { align: "center", maxWidth: w - 12 });
+
+    let fontSize = 9;
+    let lineHeight = 10;
+    pdf.setFontSize(fontSize);
+    let wrapped: string[] = [];
+    for (const raw of lines) {
+        wrapped.push(...pdf.splitTextToSize(raw, maxW));
+    }
+    let bodyH = wrapped.length * lineHeight;
+    if (bodyH > h - 6 && fontSize > 7) {
+        fontSize = 7;
+        lineHeight = 9;
+        pdf.setFontSize(fontSize);
+        wrapped = [];
+        for (const raw of lines) {
+            wrapped.push(...pdf.splitTextToSize(raw, maxW));
+        }
+        bodyH = wrapped.length * lineHeight;
+    }
+
+    const totalH = wrapped.length * lineHeight;
+    let textY = y + Math.max(lineHeight, (h - totalH) / 2 + lineHeight - 2);
+    for (const line of wrapped) {
+        pdf.text(line, x + w / 2, textY, { align: "center", maxWidth: maxW });
         textY += lineHeight;
     }
 }
