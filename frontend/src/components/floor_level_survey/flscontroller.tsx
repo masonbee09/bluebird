@@ -10,11 +10,29 @@ import {
 } from "./style_presets";
 import MathHelper from "../../utils/math_helper";
 import Communicator from "./communicator";
-import type { Shape, PointShape, LabelShape } from "./shape_types";
+import type { Shape, PointShape, LabelShape, MaterialBoundaryShape } from "./shape_types";
 
 
 const HISTORY_LIMIT = 100;
 const COALESCE_MS = 400;
+
+
+/** Ray-casting point-in-polygon. pts is flat [x0,y0, x1,y1, ...]. */
+function pointInPolygon(px: number, py: number, pts: number[]): boolean {
+    const n = pts.length / 2;
+    if (n < 3) return false;
+    let inside = false;
+    let j = n - 1;
+    for (let i = 0; i < n; i++) {
+        const xi = pts[i * 2], yi = pts[i * 2 + 1];
+        const xj = pts[j * 2], yj = pts[j * 2 + 1];
+        if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    return inside;
+}
 
 
 class FLSController {
@@ -43,7 +61,7 @@ class FLSController {
     }
 
     private isTemporary(s: Shape): boolean {
-        return s.type === "wall" && s.temporary === true;
+        return (s.type === "wall" || s.type === "boundary") && s.temporary === true;
     }
 
     private snapshot() {
@@ -165,6 +183,9 @@ class FLSController {
                     shape.draggable = heightLabelStyle.draggable!;
                     shape.fontSize = heightLabelStyle.fontsize!;
                     shape.fontFamily = heightLabelStyle.fontFamily!;
+                    break;
+                case "boundary":
+                    // No special deselection styling for boundaries
                     break;
             }
             shape.selected = false;
@@ -288,6 +309,72 @@ class FLSController {
             }
         }
         return best;
+    }
+
+    /**
+     * Propagate updated material properties to every committed boundary that
+     * was drawn with the given materialId. Called after the user edits a
+     * material so drawn regions update in real-time.
+     */
+    updateBoundaryMaterial(
+        materialId: string,
+        name: string,
+        offset: number,
+        color: string,
+        fillOpacity: number,
+    ) {
+        let changed = false;
+        for (const s of this.shapes) {
+            if (s.type !== "boundary" || this.isTemporary(s)) continue;
+            if (s.materialId !== materialId) continue;
+            s.name = name;
+            s.offset = offset;
+            s.color = color;
+            s.fillOpacity = fillOpacity;
+            changed = true;
+        }
+        if (changed) this.notify();
+    }
+
+    findBoundaryIndexAt(x: number, y: number, tolerance: number): number {
+        const mh = new MathHelper();
+        let best = -1;
+        let bestDist = tolerance;
+        for (let i = 0; i < this.shapes.length; i++) {
+            const s = this.shapes[i];
+            if (s.type !== "boundary" || this.isTemporary(s)) continue;
+            const pts = s.points;
+            const n = pts.length / 2;
+            if (n < 2) continue;
+            for (let k = 0; k < n; k++) {
+                const ax = pts[k * 2];
+                const ay = pts[k * 2 + 1];
+                const bx = pts[((k + 1) % n) * 2];
+                const by = pts[((k + 1) % n) * 2 + 1];
+                const d = mh.point_line_dist_end_constrained(x, y, ax, ay, bx, by);
+                if (!Number.isNaN(d) && d < bestDist) {
+                    bestDist = d;
+                    best = i;
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Return the adjusted Z for a point at (px, py) with raw measurement rawZ.
+     * If the point falls inside any closed material boundary, the boundary's
+     * offset is subtracted (rawZ − offset). Returns rawZ unchanged otherwise.
+     * When multiple boundaries overlap, the first matching one wins.
+     */
+    getAdjustedZ(px: number, py: number, rawZ: number): number {
+        for (const s of this.shapes) {
+            if (s.type !== "boundary" || this.isTemporary(s)) continue;
+            if (pointInPolygon(px, py, s.points)) {
+                return rawZ - s.offset;
+            }
+        }
+        return rawZ;
     }
 
     findPointIndexAt(x: number, y: number, tolerance: number): number {

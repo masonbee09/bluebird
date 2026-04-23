@@ -1,4 +1,4 @@
-import type { Shape } from "./shape_types";
+import type { Shape, FloorMaterial } from "./shape_types";
 import { jsPDF } from "jspdf";
 import { interpolateContourColor } from "./contour_colors";
 import { emptyProjectInfo, type FLSProjectInfo } from "./project_info_modal";
@@ -20,6 +20,7 @@ export interface FLSProjectSettings {
     contourEndColor: string;
     contourFill: boolean;
     pdfOrientation?: PdfOrientation;
+    materials?: FloorMaterial[];
     projectInfo?: FLSProjectInfo;
 }
 
@@ -130,6 +131,7 @@ function validateProject(obj: unknown): FLSProjectFile {
     };
     const settings: FLSProjectSettings = {
         ...rawSettings,
+        materials: Array.isArray(rawSettings.materials) ? rawSettings.materials : [],
         projectInfo: rawSettings.projectInfo
             ? { ...emptyProjectInfo(), ...rawSettings.projectInfo }
             : emptyProjectInfo(),

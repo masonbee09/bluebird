@@ -1,0 +1,401 @@
+/* ── Material Dialog ─────────────────────────────────── */
+
+.matd-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.matd-panel {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.22), 0 4px 16px rgba(15, 23, 42, 0.12);
+    width: 520px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Header */
+.matd-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid #e8eaee;
+    flex-shrink: 0;
+}
+
+.matd-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+}
+
+.matd-close-btn {
+    appearance: none;
+    background: transparent;
+    border: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-size: 18px;
+    line-height: 1;
+    color: #64748b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.matd-close-btn:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+}
+
+/* Body */
+.matd-body {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    padding: 8px 0;
+}
+
+.matd-empty {
+    padding: 32px 24px;
+    text-align: center;
+    font-size: 13px;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+/* Material row */
+.matd-row {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color 0.1s ease;
+}
+
+.matd-row:last-child { border-bottom: none; }
+
+.matd-row.is-selected .matd-row-summary {
+    background-color: #eff6ff;
+}
+
+.matd-row-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    transition: background-color 0.1s ease;
+}
+
+.matd-row-summary:hover {
+    background-color: #f8fafc;
+}
+
+.matd-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.matd-select-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    padding: 2px 7px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.matd-select-btn:hover {
+    background-color: #f0f9ff;
+    border-color: #2563eb;
+    color: #2563eb;
+}
+
+.matd-active-badge {
+    display: inline-block;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.matd-select-label {
+    font-size: 10.5px;
+    font-weight: 600;
+}
+
+.matd-name {
+    flex: 1 1 auto;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.matd-meta {
+    font-size: 11px;
+    color: #64748b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.matd-alpha { color: #94a3b8; }
+
+.matd-actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.matd-action-btn {
+    appearance: none;
+    background: transparent;
+    border: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 5px;
+    font-size: 14px;
+    color: #94a3b8;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.matd-action-btn:hover {
+    background-color: #f1f5f9;
+    color: #334155;
+}
+
+.matd-del-btn:hover {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
+/* Inline edit form */
+.matd-edit-form,
+.matd-add-form {
+    padding: 12px 18px 14px;
+    background: #f8fafc;
+    border-top: 1px dashed #e2e8f0;
+}
+
+.matd-add-form {
+    border-top: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.matd-add-heading {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+
+.matd-edit-row {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.matd-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.matd-edit-name { flex: 1 1 140px; }
+
+.matd-edit-alpha { flex: 1 1 200px; flex-direction: row; align-items: center; gap: 8px; }
+
+.matd-edit-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+
+.matd-edit-input {
+    height: 30px;
+    padding: 0 9px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: #1e293b;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.matd-edit-input:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.matd-edit-number {
+    width: 72px;
+}
+
+.matd-color-input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 36px;
+    height: 30px;
+    padding: 2px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.matd-color-input::-webkit-color-swatch-wrapper { padding: 0; border-radius: 4px; }
+.matd-color-input::-webkit-color-swatch { border: none; border-radius: 3px; }
+.matd-color-input::-moz-color-swatch { border: none; border-radius: 3px; }
+
+.matd-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 4px;
+    border-radius: 4px;
+    background: #e2e8f0;
+    outline: none;
+    cursor: pointer;
+}
+
+.matd-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #2563eb;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.3);
+    cursor: pointer;
+}
+
+.matd-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #2563eb;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.3);
+    cursor: pointer;
+}
+
+.matd-alpha-val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: #64748b;
+    min-width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.matd-preview-swatch {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    flex-shrink: 0;
+    align-self: flex-end;
+    transition: opacity 0.1s ease, background-color 0.1s ease;
+}
+
+.matd-edit-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.matd-save-btn {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.12s ease, background-color 0.12s ease;
+}
+
+.matd-save-btn:hover { background: #1d4ed8; }
+
+.matd-cancel-btn {
+    padding: 6px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #64748b;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.matd-cancel-btn:hover { background: #f8fafc; }
+
+/* Footer */
+.matd-footer {
+    padding: 12px 18px;
+    border-top: 1px solid #e8eaee;
+    flex-shrink: 0;
+}
+
+.matd-add-trigger {
+    width: 100%;
+    padding: 8px 0;
+    border: 1.5px dashed #cbd5e1;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+}
+
+.matd-add-trigger:hover:not(:disabled) {
+    border-color: #2563eb;
+    color: #2563eb;
+    background-color: #eff6ff;
+}
+
+.matd-add-trigger:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

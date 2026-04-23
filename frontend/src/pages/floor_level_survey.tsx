@@ -5,6 +5,7 @@ import {
     SelectIcon,
     WallIcon,
     PointIcon,
+    BoundaryIcon,
     SolveIcon,
     SaveIcon,
     OpenIcon,
@@ -19,10 +20,12 @@ import {
     type FLSProjectSettings,
     type PdfOrientation,
 } from "../components/floor_level_survey/project_io";
+import type { FloorMaterial } from "../components/floor_level_survey/shape_types";
 import ProjectInfoModal, {
     emptyProjectInfo,
     type FLSProjectInfo,
 } from "../components/floor_level_survey/project_info_modal";
+import MaterialDialog from "../components/floor_level_survey/material_dialog";
 import type { PointShape, Tool } from "../components/floor_level_survey/shape_types";
 import "./div_types.css";
 import "./floor_level_survey.css";
@@ -55,6 +58,7 @@ const TOOLS: ToolDef[] = [
     { id: "select", label: "Select", shortcut: "V", Icon: SelectIcon },
     { id: "draw_wall", label: "Draw Wall", shortcut: "W", Icon: WallIcon },
     { id: "draw_point", label: "Draw Point", shortcut: "P", Icon: PointIcon },
+    { id: "draw_boundary", label: "Boundary", shortcut: "B", Icon: BoundaryIcon },
 ];
 
 
@@ -65,6 +69,9 @@ function FloorLevelSurveyPage() {
     const [solveTrigger, setSolveTrigger] = useState<number>(0);
     const [showMajorGrid, setShowMajorGrid] = useState<boolean>(true);
     const [showMinimap, setShowMinimap] = useState<boolean>(true);
+    const [showBoundaries, setShowBoundaries] = useState<boolean>(() => {
+        try { return localStorage.getItem("fls.showBoundaries") !== "0"; } catch { return true; }
+    });
     const [guideOpen, setGuideOpen] = useState<boolean>(() => {
         try { return localStorage.getItem("fls.shortcutGuide.open") === "1"; } catch { return false; }
     });
@@ -89,6 +96,17 @@ function FloorLevelSurveyPage() {
     });
     const [projectInfo, setProjectInfo] = useState<FLSProjectInfo>(() => loadStoredProjectInfo());
     const [projectInfoOpen, setProjectInfoOpen] = useState<boolean>(false);
+
+    const [materials, setMaterials] = useState<FloorMaterial[]>(() => {
+        try {
+            const raw = localStorage.getItem("fls.materials");
+            if (!raw) return [];
+            return JSON.parse(raw) as FloorMaterial[];
+        } catch { return []; }
+    });
+    const [selectedMaterialIndex, setSelectedMaterialIndex] = useState<number>(-1);
+
+    const [materialsDialogOpen, setMaterialsDialogOpen] = useState(false);
     const [highPoint, setHighPoint] = useState<PointShape | null>(null);
     const [lowPoint, setLowPoint] = useState<PointShape | null>(null);
     const [differential, setDifferential] = useState<number | null>(null);
@@ -106,14 +124,47 @@ function FloorLevelSurveyPage() {
         try { localStorage.setItem("fls.pdfOrientation", pdfOrientation); } catch { /* ignore */ }
     }, [pdfOrientation]);
     useEffect(() => {
+        try { localStorage.setItem("fls.showBoundaries", showBoundaries ? "1" : "0"); } catch { /* ignore */ }
+    }, [showBoundaries]);
+    useEffect(() => {
         try { localStorage.setItem(PROJECT_INFO_STORAGE_KEY, JSON.stringify(projectInfo)); } catch { /* ignore */ }
     }, [projectInfo]);
+    useEffect(() => {
+        try { localStorage.setItem("fls.materials", JSON.stringify(materials)); } catch { /* ignore */ }
+    }, [materials]);
+
+    const selectedMaterial: FloorMaterial | null =
+        selectedMaterialIndex >= 0 && selectedMaterialIndex < materials.length
+            ? materials[selectedMaterialIndex]
+            : null;
+
+    function handleAddMaterial(patch: Omit<FloorMaterial, "id">) {
+        const newMat: FloorMaterial = { id: crypto.randomUUID(), ...patch };
+        setMaterials(prev => [...prev, newMat]);
+        setSelectedMaterialIndex(materials.length);
+    }
+
+    function handleUpdateMaterial(index: number, patch: Omit<FloorMaterial, "id">) {
+        const api = flsApiRef.current;
+        const existing = materials[index];
+        const updated: FloorMaterial = { ...existing, ...patch };
+        setMaterials(prev => prev.map((m, i) => i === index ? updated : m));
+        // Sync color/opacity/name/offset to all drawn boundary shapes
+        if (api) api.updateBoundaryMaterial(existing.id, patch.name, patch.offset, patch.color, patch.fillOpacity);
+    }
+
+    function handleDeleteMaterial(index: number) {
+        setMaterials(prev => prev.filter((_, i) => i !== index));
+        if (selectedMaterialIndex === index) setSelectedMaterialIndex(-1);
+        else if (selectedMaterialIndex > index) setSelectedMaterialIndex(prev => prev - 1);
+    }
 
     const giveContourSpacing = () => contourSpacing ?? 0.1;
     const givePointHeight = () => pointHeight ?? 0.0;
 
     const flsApiRef = useRef<FLSApi | null>(null);
     const openInputRef = useRef<HTMLInputElement | null>(null);
+    // Expose flsApiRef to material handlers above (safe — called only in events, not during render)
 
     const handleHighLowChange = useCallback((high: PointShape | null, low: PointShape | null, diff: number | null) => {
         setHighPoint(high);
@@ -135,6 +186,7 @@ function FloorLevelSurveyPage() {
             contourEndColor,
             contourFill,
             pdfOrientation,
+            materials,
             projectInfo,
         };
     }
@@ -174,6 +226,10 @@ function FloorLevelSurveyPage() {
                 setContourFill(!!s.contourFill);
                 if (s.pdfOrientation === "portrait" || s.pdfOrientation === "landscape" || s.pdfOrientation === "auto") {
                     setPdfOrientation(s.pdfOrientation);
+                }
+                if (Array.isArray(s.materials)) {
+                    setMaterials(s.materials as FloorMaterial[]);
+                    setSelectedMaterialIndex(-1);
                 }
                 if (s.projectInfo) setProjectInfo({ ...emptyProjectInfo(), ...s.projectInfo });
             }
@@ -331,6 +387,8 @@ function FloorLevelSurveyPage() {
                         setContourFill={setContourFill}
                         onActiveHeightChange={setPointHeight}
                         onHighLowChange={handleHighLowChange}
+                        selectedMaterial={selectedMaterial}
+                        showBoundaries={showBoundaries}
                     />
                 </main>
 
@@ -412,6 +470,54 @@ function FloorLevelSurveyPage() {
 
                     <div className="fls-bottom-divider" />
 
+                    <div className="fls-bottom-group fls-materials-group">
+                        <div className="fls-bottom-group-title">Floor Materials</div>
+                        <div className="fls-bottom-group-content fls-materials-row">
+                            <button
+                                type="button"
+                                className="fls-mat-dialog-trigger"
+                                onClick={() => setMaterialsDialogOpen(true)}
+                                title="Manage floor materials">
+                                {selectedMaterial ? (
+                                    <>
+                                        <span
+                                            className="fls-mat-color"
+                                            style={{ background: selectedMaterial.color }}
+                                            aria-hidden="true" />
+                                        <span className="fls-mat-name">{selectedMaterial.name}</span>
+                                        <span className="fls-mat-offset">
+                                            {selectedMaterial.offset >= 0 ? "+" : ""}
+                                            {selectedMaterial.offset}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <span className="fls-mat-name">
+                                        {materials.length > 0
+                                            ? `${materials.length} material${materials.length !== 1 ? "s" : ""}`
+                                            : "No materials"}
+                                    </span>
+                                )}
+                                <span className="fls-mat-dialog-arrow">▾</span>
+                            </button>
+
+                            {/* Visibility toggle */}
+                            <label
+                                className="fls-view-toggle"
+                                title={showBoundaries ? "Hide material areas" : "Show material areas"}>
+                                <input
+                                    type="checkbox"
+                                    className="fls-switch-input"
+                                    checked={showBoundaries}
+                                    onChange={e => setShowBoundaries(e.target.checked)}
+                                />
+                                <span className="fls-switch-track" aria-hidden="true" />
+                                <span className="fls-view-toggle-label">Show Areas</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div className="fls-bottom-divider" />
+
                     <div className="fls-bottom-group">
                         <div className="fls-bottom-group-title">PDF Layout</div>
                         <div className="fls-bottom-group-content">
@@ -452,6 +558,20 @@ function FloorLevelSurveyPage() {
                 value={projectInfo}
                 onClose={() => setProjectInfoOpen(false)}
                 onSave={setProjectInfo}
+            />
+
+            <MaterialDialog
+                open={materialsDialogOpen}
+                materials={materials}
+                selectedMaterialIndex={selectedMaterialIndex}
+                onClose={() => setMaterialsDialogOpen(false)}
+                onSelect={i => {
+                    setSelectedMaterialIndex(i);
+                    setTool("draw_boundary");
+                }}
+                onAdd={handleAddMaterial}
+                onUpdate={handleUpdateMaterial}
+                onDelete={handleDeleteMaterial}
             />
         </div>
     );

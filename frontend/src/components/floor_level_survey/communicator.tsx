@@ -54,7 +54,8 @@ class Communicator {
 
         this.parent.shapes.forEach((shape) => {
             if (shape.type === "point") {
-                points.push({ x: shape.x, y: shape.y, z: shape.z });
+                const adjustedZ = this.parent.getAdjustedZ(shape.x, shape.y, shape.z);
+                points.push({ x: shape.x, y: shape.y, z: adjustedZ });
             }
         });
 
@@ -81,8 +82,9 @@ class Communicator {
 
         this.parent.shapes.forEach((shape) => {
             if (shape.type === "point") {
-                minz = Math.min(minz, shape.z);
-                maxz = Math.max(maxz, shape.z);
+                const adjustedZ = this.parent.getAdjustedZ(shape.x, shape.y, shape.z);
+                minz = Math.min(minz, adjustedZ);
+                maxz = Math.max(maxz, adjustedZ);
             }
         });
 

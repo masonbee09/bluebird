@@ -19,12 +19,13 @@ const groups: { title: string; items: GroupedShortcut[] }[] = [
             { keys: ["V"], label: "Select tool" },
             { keys: ["W"], label: "Draw wall" },
             { keys: ["P"], label: "Draw point" },
+            { keys: ["B"], label: "Draw material boundary" },
         ],
     },
     {
         title: "Edit",
         items: [
-            { keys: ["Delete"], label: "Delete selected (or last wall segment while drawing)" },
+            { keys: ["Delete"], label: "Delete selected — or last wall/boundary vertex while drawing" },
             { keys: ["Esc"], label: "Cancel / clear selection" },
             { keys: ["↑", "/", "→"], label: "+0.1 to selected point height" },
             { keys: ["↓", "/", "←"], label: "−0.1 to selected point height" },
@@ -40,6 +41,8 @@ const groups: { title: string; items: GroupedShortcut[] }[] = [
             { keys: ["Click"], label: "Place a wall corner (always snaps to grid)" },
             { keys: ["Double-click"], label: "Finish wall polygon" },
             { keys: ["Click"], label: "On existing point: selects it instead of adding" },
+            { keys: ["Click"], label: "Boundary: place a polygon vertex (free, Alt=snap)" },
+            { keys: ["Double-click"], label: "Boundary: close and commit polygon (≥ 3 pts)" },
         ],
     },
     {

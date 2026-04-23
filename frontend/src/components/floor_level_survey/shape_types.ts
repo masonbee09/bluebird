@@ -1,4 +1,16 @@
-export type Tool = "select" | "draw_wall" | "draw_point";
+export type Tool = "select" | "draw_wall" | "draw_point" | "draw_boundary";
+
+export interface FloorMaterial {
+    id: string;
+    name: string;
+    /** Elevation offset (in survey units) subtracted from raw measured Z for
+     * points that fall inside this material's boundary region. */
+    offset: number;
+    color: string;
+    /** Alpha (0–1) for the region fill. Stroke is always fully opaque.
+     * Default: 0.25. */
+    fillOpacity: number;
+}
 
 export interface PointShape {
     type: "point";
@@ -36,4 +48,18 @@ export interface LabelShape {
     selected?: boolean;
 }
 
-export type Shape = PointShape | WallShape | LabelShape;
+export interface MaterialBoundaryShape {
+    type: "boundary";
+    /** Flat [x0,y0, x1,y1, ...] polygon vertices (closed). */
+    points: number[];
+    materialId: string;
+    name: string;
+    offset: number;
+    color: string;
+    /** Alpha (0–1) for the region fill. Mirrored from FloorMaterial.fillOpacity. */
+    fillOpacity: number;
+    temporary?: boolean;
+    selected?: boolean;
+}
+
+export type Shape = PointShape | WallShape | LabelShape | MaterialBoundaryShape;

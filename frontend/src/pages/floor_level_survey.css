@@ -406,3 +406,70 @@
     background-color: var(--color-surface-muted);
     border: 1px solid var(--color-border);
 }
+
+/* ── Floor Materials (dialog trigger) ────────────────── */
+
+.fls-materials-group {
+    flex-shrink: 0;
+}
+
+/* Row that holds the trigger + visibility toggle */
+.fls-materials-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Compact trigger button in the bottom bar */
+.fls-mat-dialog-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border: 1.5px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: #fff;
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--color-text);
+    min-width: 120px;
+    max-width: 200px;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+.fls-mat-dialog-trigger:hover {
+    border-color: var(--color-accent, #2563eb);
+    background-color: #eff6ff;
+}
+
+.fls-mat-color {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.fls-mat-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fls-mat-offset {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.fls-mat-dialog-arrow {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 2px;
+}

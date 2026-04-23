@@ -141,6 +141,17 @@ export function InfoIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 
+export function BoundaryIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...baseProps} {...props}>
+            <polygon points="12,3 21,9 17,20 7,20 3,9" strokeDasharray="2.5,1.5" />
+            <line x1="8.5" y1="12" x2="15.5" y2="12" strokeWidth="1" opacity="0.7" />
+            <line x1="10" y1="15.5" x2="14" y2="15.5" strokeWidth="1" opacity="0.7" />
+        </svg>
+    );
+}
+
+
 export function PdfIcon(props: SVGProps<SVGSVGElement>) {
     return (
         <svg {...baseProps} {...props}>

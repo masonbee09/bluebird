@@ -4,7 +4,7 @@ import { Stage, Layer, Line, Circle, Text, Group } from "react-konva";
 import type Konva from "konva";
 import FLSController from "./flscontroller";
 import { wallStyle, pointStyle, heightLabelStyle } from "./style_presets";
-import type { Tool, Shape, PointShape } from "./shape_types";
+import type { Tool, Shape, PointShape, FloorMaterial, MaterialBoundaryShape } from "./shape_types";
 import GridLayer from "./grid_layer";
 import ShortcutGuide from "./shortcut_guide";
 import Minimap from "./minimap";
@@ -12,6 +12,15 @@ import ZoomControl from "./zoom_control";
 import ContextMenu, { type ContextMenuItem } from "./context_menu";
 import { UndoIcon, RedoIcon } from "./tool_icons";
 import { snapToGrid } from "./grid_constants";
+
+function hexToRgba(hex: string, alpha: number): string {
+    let h = hex.trim().replace("#", "");
+    if (h.length === 3) h = h.split("").map(c => c + c).join("");
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha))})`;
+}
 import ContourLayer, { type ContourData } from "./contour_layer";
 import ContourLegend from "./contour_legend";
 import "./floorlevelsurvey.css";
@@ -39,6 +48,8 @@ export interface FLSApi {
     getLegendRange: () => { minZ: number; maxZ: number } | null;
     /** All contour level values from the last solve (ascending); null if none. */
     getLegendLevels: () => number[] | null;
+    /** Sync updated material properties to every drawn boundary that uses this materialId. */
+    updateBoundaryMaterial: (materialId: string, name: string, offset: number, color: string, fillOpacity: number) => void;
     /** Highest- and lowest-elevation point shapes currently in the scene. */
     getHighLow: () => { high: PointShape | null; low: PointShape | null; differential: number | null };
 }
@@ -64,6 +75,10 @@ interface FLSProps {
     onActiveHeightChange?: (z: number | null) => void;
     /** Called whenever the highest/lowest/differential values change. */
     onHighLowChange?: (high: PointShape | null, low: PointShape | null, differential: number | null) => void;
+    /** Currently selected floor material (used when drawing boundaries). */
+    selectedMaterial?: FloorMaterial | null;
+    /** Whether the floor material boundary regions layer is visible. Default true. */
+    showBoundaries?: boolean;
 }
 
 
@@ -71,13 +86,16 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange }: FLSProps) {
+function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange, selectedMaterial, showBoundaries = true }: FLSProps) {
 
     const [, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
 
     const [wallPoly, setWallPoly] = useState<{ x: number; y: number }[]>([]);
     const lastWallClickRef = useRef<{ t: number; x: number; y: number } | null>(null);
+
+    const [boundaryPoly, setBoundaryPoly] = useState<{ x: number; y: number }[]>([]);
+    const lastBoundaryClickRef = useRef<{ t: number; x: number; y: number } | null>(null);
     const [exampleInjected, setExampleInjected] = useState(false);
     const [contourData, setContourData] = useState<ContourData | null>(null);
 
@@ -157,7 +175,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
             container.style.cursor = "grabbing";
         } else if (spaceHeld) {
             container.style.cursor = "grab";
-        } else if (tool === "draw_point" || tool === "draw_wall") {
+        } else if (tool === "draw_point" || tool === "draw_wall" || tool === "draw_boundary") {
             container.style.cursor = "crosshair";
         } else {
             container.style.cursor = "default";
@@ -237,6 +255,41 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
         }
     };
 
+    const handleBoundaryClick = (bx: number, by: number) => {
+        if (!selectedMaterial) return;
+
+        const last = lastBoundaryClickRef.current;
+        const now = Date.now();
+        if (
+            last &&
+            now - last.t < DBL_CLICK_MS &&
+            Math.hypot(bx - last.x, by - last.y) <= DBL_CLICK_DIST
+        ) {
+            controller.removeTemporaryShapes();
+            if (boundaryPoly.length >= 3) {
+                const pts: number[] = [];
+                for (const v of boundaryPoly) { pts.push(v.x, v.y); }
+                controller.addShape({
+                    type: "boundary",
+                    points: pts,
+                    materialId: selectedMaterial.id,
+                    name: selectedMaterial.name,
+                    offset: selectedMaterial.offset,
+                    color: selectedMaterial.color,
+                    fillOpacity: selectedMaterial.fillOpacity ?? 0.25,
+                });
+            }
+            setBoundaryPoly([]);
+            lastBoundaryClickRef.current = null;
+            setTick(t => t + 1);
+            return;
+        }
+
+        lastBoundaryClickRef.current = { t: now, x: bx, y: by };
+        setBoundaryPoly(poly => [...poly, { x: bx, y: by }]);
+    };
+
+
     // Mouse down / move / up
 
     const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -279,6 +332,14 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
             }
             case "draw_wall":
                 handleWallClick(pointerPosition.x, pointerPosition.y);
+                break;
+            case "draw_boundary":
+                if (selectedMaterial) {
+                    const target = evt.altKey
+                        ? snapToGrid(pointerPosition.x, pointerPosition.y)
+                        : { x: pointerPosition.x, y: pointerPosition.y };
+                    handleBoundaryClick(target.x, target.y);
+                }
                 break;
             case "select": {
                 const scale = stage.scaleX() || 1;
@@ -369,6 +430,28 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
             });
             setTick(t => t + 1);
         }
+
+        if (tool === "draw_boundary" && boundaryPoly.length > 0 && selectedMaterial) {
+            const rawCursor = pointerPosition;
+            const cursor = evt.altKey
+                ? snapToGrid(rawCursor.x, rawCursor.y)
+                : rawCursor;
+            const pts: number[] = [];
+            for (const v of boundaryPoly) { pts.push(v.x, v.y); }
+            pts.push(cursor.x, cursor.y);
+            controller.removeTemporaryShapes();
+            controller.shapes.push({
+                type: "boundary",
+                points: pts,
+                materialId: selectedMaterial.id,
+                name: selectedMaterial.name,
+                offset: selectedMaterial.offset,
+                color: selectedMaterial.color,
+                fillOpacity: selectedMaterial.fillOpacity ?? 0.25,
+                temporary: true,
+            });
+            setTick(t => t + 1);
+        }
     };
 
     const restoreCursor = () => {
@@ -377,7 +460,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
         const container = stage.container();
         if (spaceHeld) {
             container.style.cursor = "grab";
-        } else if (tool === "draw_point" || tool === "draw_wall") {
+        } else if (tool === "draw_point" || tool === "draw_wall" || tool === "draw_boundary") {
             container.style.cursor = "crosshair";
         } else {
             container.style.cursor = "default";
@@ -522,6 +605,26 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
         if (!pointer) return;
 
         const scale = stage.scaleX() || 1;
+
+        const boundaryTol = Math.max(6, 10 / scale);
+        const boundaryIdx = controller.findBoundaryIndexAt(pointer.x, pointer.y, boundaryTol);
+        if (boundaryIdx !== -1) {
+            const b = controller.shapes[boundaryIdx] as MaterialBoundaryShape;
+            setContextMenu({
+                x: e.evt.clientX,
+                y: e.evt.clientY,
+                items: [
+                    {
+                        id: "delete-boundary",
+                        label: `Delete boundary (${b.name})`,
+                        destructive: true,
+                        onSelect: () => { controller.removeShape(boundaryIdx); },
+                    },
+                ],
+            });
+            return;
+        }
+
         const wallTol = Math.max(6, 8 / scale);
         const wallIdx = controller.findWallIndexAt(pointer.x, pointer.y, wallTol);
 
@@ -678,6 +781,11 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 lastWallClickRef.current = null;
                 controller.removeTemporaryShapes();
                 setTick(t => t + 1);
+            } else if (tool === "draw_boundary" && boundaryPoly.length > 0) {
+                setBoundaryPoly([]);
+                lastBoundaryClickRef.current = null;
+                controller.removeTemporaryShapes();
+                setTick(t => t + 1);
             } else {
                 controller.clearSelection();
             }
@@ -709,6 +817,20 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 setTick(t => t + 1);
                 return;
             }
+            if (tool === "draw_boundary" && boundaryPoly.length > 0) {
+                e.preventDefault();
+                if (boundaryPoly.length >= 2) {
+                    setBoundaryPoly(poly => poly.slice(0, -1));
+                    const newLast = boundaryPoly[boundaryPoly.length - 2];
+                    lastBoundaryClickRef.current = { t: 0, x: newLast.x, y: newLast.y };
+                } else {
+                    setBoundaryPoly([]);
+                    lastBoundaryClickRef.current = null;
+                }
+                controller.removeTemporaryShapes();
+                setTick(t => t + 1);
+                return;
+            }
             controller.removeSelectedShapes();
             return;
         }
@@ -733,6 +855,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
         if (lower === "v" || lower === "s") { setTool("select"); return; }
         if (lower === "w") { setTool("draw_wall"); return; }
         if (lower === "p") { setTool("draw_point"); return; }
+        if (lower === "b") { setTool("draw_boundary"); return; }
         if (lower === "g") { setShowMajorGrid(!showMajorGrid); return; }
         if (lower === "m") { setShowMinimap(!showMinimap); return; }
         if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomCenter(1.1); return; }
@@ -742,7 +865,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
         if (e.key === '\\') {
             injectExampleShapes();
         }
-    }, [tool, wallPoly, controller, setTool, zoomCenter, frameAll, spaceHeld, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, injectExampleShapes]);
+    }, [tool, wallPoly, boundaryPoly, controller, setTool, zoomCenter, frameAll, spaceHeld, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, injectExampleShapes]);
 
     const handleKeyUp = useCallback((e: KeyboardEvent) => {
         if (e.code === "Space") {
@@ -917,6 +1040,9 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 const differential = high && low ? high.z - low.z : null;
                 return { high, low, differential };
             },
+            updateBoundaryMaterial: (materialId, name, offset, color, fillOpacity) => {
+                controller.updateBoundaryMaterial(materialId, name, offset, color, fillOpacity);
+            },
         };
         return () => {
             if (apiRef) apiRef.current = null;
@@ -1003,6 +1129,70 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     endColor={contourEndColor}
                     showFill={contourFill}
                 />
+
+                {/* Material boundary regions — rendered below walls/points */}
+                <Layer listening={false} visible={showBoundaries}>
+                    {(controller.shapes.filter((s): s is MaterialBoundaryShape => s.type === "boundary")).map((b, i) => {
+                        const invScale = 1 / Math.max(0.01, viewport.scale);
+                        const strokeW = 1.4 * invScale;
+                        const dashLen = 6 * invScale;
+                        const dashGap = 4 * invScale;
+                        const pts = b.points;
+                        const n = pts.length / 2;
+                        let cx = 0, cy = 0;
+                        for (let k = 0; k < n; k++) { cx += pts[k * 2]; cy += pts[k * 2 + 1]; }
+                        cx /= Math.max(1, n);
+                        cy /= Math.max(1, n);
+                        const fs = 11 * invScale;
+                        const isClosed = !b.temporary;
+                        return (
+                            <Group key={`b-${i}`} listening={false}>
+                                <Line
+                                    points={pts}
+                                    closed={isClosed}
+                                    stroke={b.color}
+                                    strokeWidth={strokeW}
+                                    dash={[dashLen, dashGap]}
+                                    fill={isClosed
+                                        ? hexToRgba(b.color, b.fillOpacity)
+                                        : "transparent"}
+                                    opacity={isClosed ? 1 : 0.7}
+                                    fillEnabled={isClosed}
+                                    strokeScaleEnabled={false}
+                                    listening={false}
+                                    perfectDrawEnabled={false}
+                                />
+                                {isClosed && (
+                                    <Group x={cx} y={cy} listening={false}>
+                                        <Text
+                                            text={b.name}
+                                            fontSize={fs}
+                                            fill={b.color}
+                                            align="center"
+                                            offsetX={0}
+                                            offsetY={fs * 0.6}
+                                            fontStyle="bold"
+                                            fontFamily="Arial, Helvetica, sans-serif"
+                                            listening={false}
+                                            opacity={0.85}
+                                        />
+                                        <Text
+                                            text={`offset: ${b.offset >= 0 ? "+" : ""}${b.offset.toFixed(2)}`}
+                                            fontSize={fs * 0.82}
+                                            fill={b.color}
+                                            align="center"
+                                            offsetX={0}
+                                            offsetY={-fs * 0.2}
+                                            fontFamily="Arial, Helvetica, sans-serif"
+                                            listening={false}
+                                            opacity={0.75}
+                                        />
+                                    </Group>
+                                )}
+                            </Group>
+                        );
+                    })}
+                </Layer>
 
                 <Layer>
                     {controller.getShapesAsShapeData().map((shape, index) => {
