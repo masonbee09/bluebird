@@ -6,6 +6,13 @@ api.log
 *.log.*
 logs/
 
+# Beta access-key list is a live secret. Keep only the example file in VCS.
+beta_keys.json
+!beta_keys.example.json
+
+# User feedback store (contains user data — never commit).
+feedback.jsonl
+
 # Python caches and build artifacts
 __pycache__/
 *.py[cod]

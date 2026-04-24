@@ -87,6 +87,8 @@ interface FLSProps {
     backgroundAdjustMode?: boolean;
     /** Called when the user drags or transforms the background image. */
     onBackgroundChange?: (patch: Partial<FLSBackgroundImage>) => void;
+    /** In-app notification hook (replaces browser alert popups). */
+    onNotify?: (message: string, title?: string, variant?: "info" | "warning" | "error") => void;
 }
 
 
@@ -94,7 +96,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 
 
-function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange, selectedMaterial, showBoundaries = true, backgroundImage, backgroundAdjustMode = false, onBackgroundChange }: FLSProps) {
+function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHeight, solveTrigger, showMajorGrid, setShowMajorGrid, showMinimap, setShowMinimap, guideOpen, setGuideOpen, contourStartColor, contourEndColor, contourFill, setContourFill, onActiveHeightChange, onHighLowChange, selectedMaterial, showBoundaries = true, backgroundImage, backgroundAdjustMode = false, onBackgroundChange, onNotify }: FLSProps) {
 
     const [tick, setTick] = useState(0);
     const [controller] = useState(() => new FLSController(() => setTick(t => t + 1), getContourSpacing));
@@ -146,7 +148,11 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                 setContourData(data as ContourData);
             } catch (err) {
                 console.error("Failed to solve contours:", err);
-                if (!cancelled) setContourData(null);
+                if (!cancelled) {
+                    setContourData(null);
+                    const message = err instanceof Error ? err.message : String(err);
+                    onNotify?.(message, "Could not compute contours", "error");
+                }
             }
             })();
         return () => { cancelled = true; };
@@ -350,6 +356,15 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     controller.selectPointByIndex(existing);
                 } else {
                     addPoint(target.x, target.y, getPointHeight ? getPointHeight() : 0);
+                    // Warn the user when a point is dropped outside the wall
+                    // polygon — these points will block contour solving.
+                    if (!controller.isInsideWall(target.x, target.y)) {
+                        onNotify?.(
+                            "This point is outside the wall polygon. It will be highlighted and the solver will fail until the point is moved inside the walls or removed.",
+                            "Point outside wall",
+                            "warning",
+                        );
+                    }
                 }
                 break;
             }
@@ -359,8 +374,8 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     setWallPoly([]);
                     lastWallClickRef.current = null;
                     setTick(t => t + 1);
-                    break;
-                }
+                break;
+        }
                 handleWallClick(pointerPosition.x, pointerPosition.y, evt.altKey);
                 break;
             case "draw_boundary":
@@ -370,7 +385,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                         : { x: pointerPosition.x, y: pointerPosition.y };
                     handleBoundaryClick(target.x, target.y);
                 } else {
-                    window.alert("Please define/select a floor material first.");
+                    onNotify?.("Please define/select a floor material first.", "Material required", "warning");
                 }
                 break;
             case "select": {
@@ -699,7 +714,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                         destructive: true,
                         onSelect: () => {
                             controller.selectPointByIndex(pointIdx);
-                            controller.removeSelectedShapes();
+            controller.removeSelectedShapes();
                         },
                     },
                 ],
@@ -1287,6 +1302,41 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     })}
                 </Layer>
 
+                {/* Warning rings for points that sit outside the wall polygon. */}
+                <Layer listening={false}>
+                    {(() => {
+                        const outside = controller.getPointsOutsideWall();
+                        if (outside.length === 0) return null;
+                        const invScale = 1 / Math.max(0.001, viewport.scale);
+                        const ringRadius = 12 * invScale;
+                        const strokeW = 2 * invScale;
+                        return outside.map((p, i) => (
+                            <Group key={`out-${p.tieid ?? i}`} x={p.x} y={p.y} listening={false}>
+                                <Circle
+                                    radius={ringRadius}
+                                    stroke="#f97316"
+                                    strokeWidth={strokeW}
+                                    dash={[4 * invScale, 3 * invScale]}
+                                    listening={false}
+                                    perfectDrawEnabled={false}
+                                    shadowColor="rgba(249,115,22,0.35)"
+                                    shadowBlur={6}
+                                    shadowOpacity={0.9}
+                                />
+                                <Text
+                                    text="!"
+                                    fontSize={14 * invScale}
+                                    fontStyle="bold"
+                                    fill="#f97316"
+                                    x={(ringRadius + 2 * invScale)}
+                                    y={-ringRadius}
+                                    listening={false}
+                                />
+                            </Group>
+                        ));
+                    })()}
+                </Layer>
+
                 <Layer listening={false}>
                     {(() => {
                         const invScale = 1 / Math.max(0.001, viewport.scale);
@@ -1372,7 +1422,7 @@ function FloorLevelSurvey({ apiRef, tool, setTool, getContourSpacing, getPointHe
                     style={{ left: pointerScreen.x + 14, top: pointerScreen.y + 14 }}>
                     z = {selectedZ.toFixed(2)}
                     <span className="fls-height-hint">scroll to adjust</span>
-                </div>
+        </div>
             )}
 
             <div className="fls-view-toggles" role="group" aria-label="View toggles">

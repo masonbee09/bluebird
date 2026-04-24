@@ -1,0 +1,41 @@
+.fls-notice-modal {
+    width: min(520px, 100%);
+}
+
+.fls-notice-title-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.fls-notice-badge {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.fls-notice-modal.is-info .fls-notice-badge {
+    background-color: #2563eb;
+}
+
+.fls-notice-modal.is-warning .fls-notice-badge {
+    background-color: #d97706;
+}
+
+.fls-notice-modal.is-error .fls-notice-badge {
+    background-color: #dc2626;
+}
+
+.fls-notice-message {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--color-text);
+    white-space: pre-wrap;
+}

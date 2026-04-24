@@ -1,10 +1,12 @@
 import FLSController from "./flscontroller"
+import { apiFetch } from "../../auth/api_client";
 
 
 // Polygon-aware contour endpoint. Unlike the previous line-only endpoint, this
 // returns filled polygons clipped to the wall boundary so we can colour-fill
-// the floor plan directly on the canvas.
-const url = "http://127.0.0.1:8001/fls_get_contour_polygons"
+// the floor plan directly on the canvas. The backend URL is resolved at
+// runtime via the shared API client so dev/prod use the same code path.
+const ENDPOINT = "/fls_get_contour_polygons";
 
 
 class Communicator {
@@ -129,6 +131,23 @@ class Communicator {
     }
 
     createJsonData() {
+        // Guard: a point placed outside the wall polygon is almost always a
+        // mistake — the backend cannot interpolate a surface outside the
+        // region it will clip against, so bail early with a clear message.
+        const outside = this.parent.getPointsOutsideWall();
+        if (outside.length > 0) {
+            const n = outside.length;
+            const preview = outside
+                .slice(0, 3)
+                .map(p => `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, z=${p.z.toFixed(2)})`)
+                .join(", ");
+            const more = n > 3 ? ` +${n - 3} more` : "";
+            throw new Error(
+                `${n} point${n === 1 ? " is" : "s are"} placed outside the wall polygon: ${preview}${more}. ` +
+                `Remove or move ${n === 1 ? "it" : "them"} inside the walls before solving.`,
+            );
+        }
+
         const bounds = this.getBounds();
         const points = this.getPoints();
         const heights = this.getHeights();
@@ -147,21 +166,7 @@ class Communicator {
 
     async fetchContours() {
         const data = this.createJsonData();
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        return result;
+        return await apiFetch(ENDPOINT, { method: "POST", body: data });
     }
 }
 

@@ -29,6 +29,7 @@ import ProjectInfoModal, {
 } from "../components/floor_level_survey/project_info_modal";
 import MaterialDialog from "../components/floor_level_survey/material_dialog";
 import PdfExportModal from "../components/floor_level_survey/pdf_export_modal";
+import NoticeDialog, { type NoticeVariant } from "../components/floor_level_survey/notice_dialog";
 import type { PointShape, Tool } from "../components/floor_level_survey/shape_types";
 import "./div_types.css";
 import "./floor_level_survey.css";
@@ -66,6 +67,12 @@ const TOOLS: ToolDef[] = [
 
 
 function FloorLevelSurveyPage() {
+    const [notice, setNotice] = useState<{ open: boolean; title: string; message: string; variant: NoticeVariant }>({
+        open: false,
+        title: "",
+        message: "",
+        variant: "info",
+    });
     const [tool, setTool] = useState<Tool>("select");
     const [contourSpacing, setContourSpacing] = useState<number | null>(0.1);
     const [pointHeight, setPointHeight] = useState<number | null>(0.0);
@@ -119,6 +126,10 @@ function FloorLevelSurveyPage() {
     const [bgImporting, setBgImporting] = useState<boolean>(false);
     const bgFileInputRef = useRef<HTMLInputElement | null>(null);
     const [pdfDialogOpen, setPdfDialogOpen] = useState<boolean>(false);
+
+    const showNotice = useCallback((message: string, title = "Notice", variant: NoticeVariant = "info") => {
+        setNotice({ open: true, title, message, variant });
+    }, []);
 
 
     useEffect(() => {
@@ -224,7 +235,7 @@ function FloorLevelSurveyPage() {
         } catch (err) {
             console.error(err);
             const message = err instanceof Error ? err.message : "Could not import the file.";
-            window.alert(`Background import failed: ${message}`);
+            showNotice(`Background import failed: ${message}`, "Import failed", "error");
         } finally {
             setBgImporting(false);
         }
@@ -288,7 +299,7 @@ function FloorLevelSurveyPage() {
             saveProjectFile(api.getShapes(), currentSettings());
         } catch (err) {
             console.error(err);
-            window.alert("Failed to save project file.");
+            showNotice("Failed to save project file.", "Save failed", "error");
         }
     }
 
@@ -336,7 +347,7 @@ function FloorLevelSurveyPage() {
         } catch (err) {
             console.error(err);
             const message = err instanceof Error ? err.message : "Failed to read project file.";
-            window.alert(`Import failed: ${message}`);
+            showNotice(`Import failed: ${message}`, "Import failed", "error");
         }
     }
 
@@ -346,7 +357,7 @@ function FloorLevelSurveyPage() {
         try {
             const img = api.getExportImage(3);
             if (!img) {
-                window.alert("Canvas is not ready for export yet.");
+                showNotice("Canvas is not ready for export yet.", "Export unavailable", "warning");
                 return;
             }
             const settings = currentSettings();
@@ -363,7 +374,7 @@ function FloorLevelSurveyPage() {
             });
         } catch (err) {
             console.error(err);
-            window.alert("Failed to export PDF.");
+            showNotice("Failed to export PDF.", "Export failed", "error");
         }
     }
 
@@ -501,6 +512,7 @@ function FloorLevelSurveyPage() {
                         backgroundImage={backgroundImage}
                         backgroundAdjustMode={bgAdjustMode}
                         onBackgroundChange={handleBackgroundPatch}
+                        onNotify={showNotice}
                     />
                 </main>
 
@@ -754,6 +766,14 @@ function FloorLevelSurveyPage() {
                 onAdd={handleAddMaterial}
                 onUpdate={handleUpdateMaterial}
                 onDelete={handleDeleteMaterial}
+            />
+
+            <NoticeDialog
+                open={notice.open}
+                title={notice.title}
+                message={notice.message}
+                variant={notice.variant}
+                onClose={() => setNotice(prev => ({ ...prev, open: false }))}
             />
         </div>
     );

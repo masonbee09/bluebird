@@ -296,6 +296,50 @@ class FLSController {
         return this.getAdjustedZ(point.x, point.y, point.z);
     }
 
+    /**
+     * Build the wall polygon (flat [x0,y0, x1,y1, ...]) from the committed
+     * wall segments, mirroring the order used by
+     * {@link Communicator.getWallPoints} so the frontend outside-wall check
+     * matches what the backend will clip against.
+     *
+     * Returns null when there aren't enough walls to form a polygon.
+     */
+    buildWallPolygonFlat(): number[] | null {
+        const walls = this.shapes.filter(
+            (s): s is Extract<Shape, { type: "wall" }> => s.type === "wall" && !this.isTemporary(s),
+        );
+        if (walls.length === 0) return null;
+
+        const sorted = [...walls].sort((a, b) => b.points.length - a.points.length);
+        const out: number[] = [];
+        for (const wall of sorted) {
+            for (let i = 0; i + 1 < wall.points.length; i += 2) {
+                out.push(wall.points[i], wall.points[i + 1]);
+            }
+        }
+        return out.length >= 6 ? out : null;
+    }
+
+    /** Check if (x,y) is inside the current wall polygon. If no walls exist
+     * yet, the scene is unconstrained and we treat everything as inside. */
+    isInsideWall(x: number, y: number): boolean {
+        const poly = this.buildWallPolygonFlat();
+        if (!poly) return true;
+        return pointInPolygon(x, y, poly);
+    }
+
+    /** Return every committed point that currently sits outside the wall polygon. */
+    getPointsOutsideWall(): PointShape[] {
+        const poly = this.buildWallPolygonFlat();
+        if (!poly) return [];
+        const outside: PointShape[] = [];
+        for (const s of this.shapes) {
+            if (s.type !== "point") continue;
+            if (!pointInPolygon(s.x, s.y, poly)) outside.push(s);
+        }
+        return outside;
+    }
+
     findWallIndexAt(x: number, y: number, tolerance: number): number {
         let best = -1;
         let bestDist = tolerance;
